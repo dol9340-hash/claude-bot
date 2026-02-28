@@ -1,51 +1,51 @@
-# Product Requirements Document (PRD): ClaudeBot
+# 제품 요구사항 문서 (PRD): ClaudeBot
 
-## 1. Product Vision
+## 1. 제품 비전
 
-**"Stop just chatting with AI, and start delegating."**
+> "AI와 대화만 하지 말고, 실제로 위임하세요."
 
-ClaudeBot is an autonomous, queue-driven orchestrator that transforms Claude from a conversational assistant into a proactive, goal-driven agent working continuously in the background.
+ClaudeBot은 자율적인 큐 기반 오케스트레이터로, Claude를 단순한 대화형 보조 도구에서 백그라운드에서 지속적으로 목표를 향해 움직이는 능동적인 에이전트로 변환합니다.
 
-**Hybrid Architecture:** Agent SDK (primary) + CLI wrapping (fallback)
+**하이브리드 아키텍처:** Agent SDK (기본) + CLI 래핑 (폴백)
 
-- **Agent SDK Engine** (`@anthropic-ai/claude-agent-sdk`): Type-safe, native subagent support, exact cost tracking. Requires API Key.
-- **CLI Engine** (`claude -p --output-format stream-json`): Works with Max subscription billing. Simpler but less reliable.
+- **Agent SDK 엔진** (`@anthropic-ai/claude-agent-sdk`): 타입 안전성, 네이티브 서브에이전트 지원, 정확한 비용 추적. API Key 필요.
+- **CLI 엔진** (`claude -p --output-format stream-json`): Max 구독 청구 방식에서 동작. 더 단순하지만 신뢰성은 낮음.
 
-## 2. Objectives & Success Metrics
+## 2. 목표 및 성공 지표
 
-* **Primary Goal:** Automate repetitive coding, refactoring, and testing tasks without manual prompt intervention.
-* **Milestone:** Achieve **5,000 GitHub Stars** to secure the Claude MAX 5-month reward.
-* **Success Metric:** Zero downtime between tasks. The bot successfully empties a predefined task queue with 100% autonomy.
+* **주요 목표:** 수동 프롬프트 개입 없이 반복적인 코딩, 리팩터링, 테스트 작업을 자동화한다.
+* **마일스톤:** Claude MAX 5개월 보상을 받기 위해 **GitHub Stars 5,000개** 달성.
+* **성공 지표:** 작업 간 다운타임 제로. 봇이 사전에 정의된 작업 큐를 100% 자율적으로 완전히 처리한다.
 
-## 3. Target Audience
+## 3. 대상 사용자
 
-* Developers tired of babysitting AI prompts.
-* Teams needing massive, multi-file refactoring or automated overnight testing.
-* Open-source contributors looking for hands-free boilerplate generation.
+* AI 프롬프트를 일일이 관리하는 데 지친 개발자.
+* 대규모 멀티 파일 리팩터링이나 야간 자동 테스트가 필요한 팀.
+* 핸즈프리로 보일러플레이트를 생성하고 싶은 오픈소스 기여자.
 
-## 4. Core Features
+## 4. 핵심 기능
 
-* **Task Queue Management:** Reads tasks from a markdown file (`tasks.md` with checkboxes) and executes them sequentially. Supports inline tags: `[cwd:path]`, `[budget:1.50]`, `[turns:30]`, `[agent:name]`.
-* **Hybrid Execution Engine:** Abstract `IExecutor` interface with two implementations:
-  - **SDK Executor:** Uses `query()` from `@anthropic-ai/claude-agent-sdk` for type-safe, streaming execution with native subagent support.
-  - **CLI Executor:** Uses `claude -p --output-format stream-json` as a child process for Max subscription users.
-* **Automatic Completion Detection:** SDK engine returns when `query()` completes. CLI engine detects completion via process exit code + `type: "result"` in stream-json output.
-* **Resilient Execution:** Exponential backoff retry, per-task AbortController timeouts, graceful SIGINT/SIGTERM shutdown.
-* **Cost Tracking:** SDK provides exact `total_cost_usd`. CLI provides estimated cost. Global budget limits halt the queue when exceeded.
-* **Session Management:** Persists session IDs to `.claudebot/sessions.json` for resume capability and historical cost tracking.
+* **작업 큐 관리:** 마크다운 파일(`tasks.md`의 체크박스)에서 작업을 읽어 순차적으로 실행한다. 인라인 태그 지원: `[cwd:path]`, `[budget:1.50]`, `[turns:30]`, `[agent:name]`.
+* **하이브리드 실행 엔진:** 두 가지 구현체를 가진 추상 `IExecutor` 인터페이스:
+  - **SDK Executor:** 타입 안전 스트리밍 실행과 네이티브 서브에이전트 지원을 위해 `@anthropic-ai/claude-agent-sdk`의 `query()`를 사용.
+  - **CLI Executor:** Max 구독 사용자를 위해 `claude -p --output-format stream-json`을 자식 프로세스로 실행.
+* **자동 완료 감지:** SDK 엔진은 `query()` 완료 시 반환. CLI 엔진은 프로세스 종료 코드 + stream-json 출력의 `type: "result"`로 완료를 감지.
+* **안정적인 실행:** 지수 백오프 재시도, 작업별 AbortController 타임아웃, SIGINT/SIGTERM 우아한 종료 처리.
+* **비용 추적:** SDK는 `total_cost_usd`를 정확하게 제공. CLI는 추정 비용을 제공. 전역 예산 한도를 초과하면 큐를 자동으로 중단.
+* **세션 관리:** 재개 기능 및 히스토리 비용 추적을 위해 세션 ID를 `.claudebot/sessions.json`에 저장.
 
-## 5. Advanced Feature: Multi-Agent Swarm
+## 5. 고급 기능: 멀티 에이전트 스웜
 
-ClaudeBot supports a Manager/Developer/QA pipeline using the Agent SDK's **native `agents` option**. No external message broker (Redis, SQLite) is needed.
+ClaudeBot은 Agent SDK의 **네이티브 `agents` 옵션**을 활용한 Manager/Developer/QA 파이프라인을 지원한다. Redis, SQLite 같은 외부 메시지 브로커는 필요 없다.
 
-* **Role-Based Agents:** Manager (Opus), Developer (Sonnet), QA (Sonnet) with distinct tool permissions.
-* **Task Delegation:** Manager uses the SDK's `Task` tool to spawn Developer and QA subagents automatically.
-* **Peer Review Loop:** Developer submits code, QA validates. If QA fails, Manager routes feedback back to Developer (capped at 3 revision cycles).
-* **Tool Isolation:** QA has read-only access (no Write/Edit tools), preventing unauthorized modifications.
+* **역할 기반 에이전트:** Manager (Opus), Developer (Sonnet), QA (Sonnet)가 각각 별도의 도구 권한을 가짐.
+* **작업 위임:** Manager가 SDK의 `Task` 도구를 사용해 Developer와 QA 서브에이전트를 자동으로 생성.
+* **피어 리뷰 루프:** Developer가 코드를 제출하면 QA가 검증. QA 실패 시, Manager가 피드백을 Developer에게 다시 전달 (최대 3회 수정 사이클).
+* **도구 격리:** QA는 읽기 전용 접근권한을 가짐 (Write/Edit 도구 없음). 무단 수정을 방지.
 
-## 6. Multi-Agent Architecture
+## 6. 멀티 에이전트 아키텍처
 
-The swarm uses SDK-native subagents - no custom IPC required.
+스웜은 SDK 네이티브 서브에이전트를 사용하므로 별도의 IPC 구현이 필요 없다.
 
 ```mermaid
 flowchart TD
@@ -65,9 +65,9 @@ flowchart TD
     SDK -->|6. Final result| Manager
 ```
 
-## 7. System Architecture
+## 7. 시스템 아키텍처
 
-The core engine uses a simple sequential loop. The `IExecutor` abstraction enables switching between SDK and CLI backends.
+핵심 엔진은 단순한 순차 루프를 사용한다. `IExecutor` 추상화를 통해 SDK와 CLI 백엔드를 전환할 수 있다.
 
 ```mermaid
 flowchart TD
@@ -99,52 +99,53 @@ flowchart TD
     Q -- No --> B
 ```
 
-## 8. Technology Stack
+## 8. 기술 스택
 
-| Component | Technology |
+| 구성 요소 | 기술 |
 |-----------|-----------|
-| Language | TypeScript (ESM, ES2022) |
-| Primary Engine | `@anthropic-ai/claude-agent-sdk` |
-| Fallback Engine | `claude` CLI (`-p --output-format stream-json`) |
-| CLI Framework | Commander.js |
-| Logging | Pino |
-| Config Validation | Zod |
-| Permission Mode | `acceptEdits` (default) |
+| 언어 | TypeScript (ESM, ES2022) |
+| 기본 엔진 | `@anthropic-ai/claude-agent-sdk` |
+| 폴백 엔진 | `claude` CLI (`-p --output-format stream-json`) |
+| CLI 프레임워크 | Commander.js |
+| 로깅 | Pino |
+| config 유효성 검사 | Zod |
+| 권한 모드 | `acceptEdits` (기본값) |
 
-## 9. Cost Model
+## 9. 비용 모델
 
-| Engine | Billing | Cost Tracking |
+| 엔진 | 청구 방식 | 비용 추적 |
 |--------|---------|--------------|
-| SDK | API Key (per-token) | Exact: `SDKResultMessage.total_cost_usd` |
-| CLI | Max subscription (flat rate) | Estimated from usage data or N/A |
+| SDK | API Key (토큰 단위) | 정확: `SDKResultMessage.total_cost_usd` |
+| CLI | Max 구독 (정액제) | 사용량 데이터 기반 추정 또는 N/A |
 
-**Budget Controls:**
-- `maxBudgetPerTaskUsd`: Per-task spending limit
-- `maxTotalBudgetUsd`: Global budget for entire queue run
-- Queue halts automatically when budget is exceeded
+**예산 제어:**
 
----
-
-## 10. BotGraph — Generalized Multi-Bot Collaborative Pipeline
-
-> **Status:** Planned Feature (Phase 2)
-> Designed 2026-02-28. A config-driven, domain-agnostic framework for N-bot autonomous pipelines.
-
-### 10.1 Vision & Motivation
-
-The current ClaudeBot runs tasks sequentially with a single orchestrator. The next evolution is a **BotGraph**: a configurable team of named bots, each with a declared role, tool permissions, and peer connections — collaborating via a shared file workspace until a task backlog is exhausted.
-
-**Core principle:** The framework is domain-agnostic. The same runtime supports a software dev team, a research team, a content pipeline, or any other collaborative workflow — purely by changing `claudebot.swarm.json`. No code changes between use cases.
-
-**Core idea:** N named Claude instances run as independent ClaudeBot processes in watch mode. They communicate via two file-based channels: a shared bulletin board (`board.md`) and per-bot inboxes. No external message broker (Redis, RabbitMQ) needed — file I/O is the message bus.
-
-**Relation to the existing SDK swarm:** The SDK-native swarm (Section 5) runs within a single `query()` call — top-down, ephemeral, no inter-process state. BotGraph runs across multiple processes with persistent state. They are complementary: a BotGraph bot can internally use an SDK swarm for complex subtasks.
+- `maxBudgetPerTaskUsd`: 작업당 지출 한도
+- `maxTotalBudgetUsd`: 전체 큐 실행의 전역 예산
+- 예산 초과 시 큐가 자동으로 중단됨
 
 ---
 
-### 10.2 BotGraph Config Schema (`claudebot.swarm.json`)
+## 10. BotGraph — 범용 멀티 봇 협업 파이프라인
 
-All bot roles, connections, and behavior are declared in a single config file. The framework reads this and spawns the appropriate processes — no hardcoded bot names anywhere in the code.
+> **상태:** 계획된 기능 (Phase 2)
+> 설계일: 2026-02-28. N개 봇 자율 파이프라인을 위한 config 기반, 도메인 독립적 프레임워크.
+
+### 10.1 비전 및 동기
+
+현재 ClaudeBot은 단일 오케스트레이터로 작업을 순차 처리한다. 다음 진화 단계는 **BotGraph**로, 이름이 정의된 봇들이 각자의 역할, 도구 권한, 피어 연결을 선언하고 공유 파일 워크스페이스를 통해 협력하여 작업 백로그를 소진할 때까지 동작하는 구성 가능한 팀이다.
+
+**핵심 원칙:** 프레임워크는 도메인에 독립적이다. 동일한 런타임이 소프트웨어 개발 팀, 연구 팀, 콘텐츠 파이프라인, 또는 어떤 협업 워크플로우도 지원한다 — `claudebot.swarm.json`을 바꾸는 것만으로 가능하며, 코드 변경은 필요 없다.
+
+**핵심 아이디어:** N개의 이름이 붙은 Claude 인스턴스가 watch 모드로 독립적인 ClaudeBot 프로세스로 동작한다. 이들은 공유 게시판(`board.md`)과 봇별 inbox라는 두 개의 파일 기반 채널로 통신한다. 외부 메시지 브로커(Redis, RabbitMQ)는 필요 없다 — 파일 I/O가 메시지 버스 역할을 한다.
+
+**기존 SDK 스웜과의 관계:** SDK 네이티브 스웜(5절)은 단일 `query()` 호출 내에서 동작한다 — 하향식, 일회성, 프로세스 간 상태 없음. BotGraph는 여러 프로세스에 걸쳐 영속 상태로 실행된다. 둘은 상호 보완적이다: BotGraph의 봇은 내부적으로 복잡한 서브태스크 처리를 위해 SDK 스웜을 활용할 수 있다.
+
+---
+
+### 10.2 BotGraph Config 스키마 (`claudebot.swarm.json`)
+
+모든 봇 역할, 연결, 동작은 단일 config 파일에 선언된다. 프레임워크가 이를 읽어 적절한 프로세스를 생성한다 — 코드 어디에도 봇 이름이 하드코딩되지 않는다.
 
 ```jsonc
 {
@@ -154,32 +155,32 @@ All bot roles, connections, and behavior are declared in a single config file. T
   "watchIntervalMs": 15000,
 
   "swarmGraph": {
-    // Shared workspace path (configurable, not hardcoded)
+    // 공유 워크스페이스 경로 (설정 가능, 하드코딩 아님)
     "workspacePath": ".botspace",
     "boardFile": "board.md",
     "registryFile": "registry.json",
     "stuckTaskTimeoutMs": 600000,
 
-    // Which bots start the pipeline on launch (others wake on inbox message)
+    // 실행 시 파이프라인을 시작하는 봇 (나머지는 inbox 메시지로 깨어남)
     "entryBots": ["coordinator"],
 
-    // N bots — any names, any roles
+    // N개 봇 — 이름과 역할은 자유롭게 설정
     "bots": {
       "coordinator": {
         "model": "claude-opus-4-6",
-        "systemPromptFile": "prompts/coordinator.md",  // or inline "systemPrompt"
-        "watchesFiles": ["docs/tasks/*.md"],            // this bot's trigger files (glob)
-        "canContact": ["worker", "reviewer"],           // whitelist — enforced by orchestrator
-        "workspaceDir": "coordinator",                  // under workspacePath
+        "systemPromptFile": "prompts/coordinator.md",  // 또는 인라인 "systemPrompt"
+        "watchesFiles": ["docs/tasks/*.md"],            // 이 봇의 트리거 파일 (glob)
+        "canContact": ["worker", "reviewer"],           // 화이트리스트 — 오케스트레이터가 강제
+        "workspaceDir": "coordinator",                  // workspacePath 하위 경로
         "maxBudgetPerTaskUsd": 5.00,
         "maxTurnsPerTask": 30,
-        "terminatesOnEmpty": true,                      // posts SWARM_COMPLETE when done
+        "terminatesOnEmpty": true,                      // 완료 시 SWARM_COMPLETE 게시
         "allowedTools": ["Read", "Write", "Edit", "Grep", "Glob"]
       },
       "worker": {
         "model": "claude-sonnet-4-6",
         "systemPromptFile": "prompts/worker.md",
-        "watchesFiles": [],                             // wakes only on inbox messages
+        "watchesFiles": [],                             // inbox 메시지로만 깨어남
         "canContact": ["coordinator", "reviewer"],
         "workspaceDir": "worker",
         "maxBudgetPerTaskUsd": 10.00,
@@ -196,14 +197,14 @@ All bot roles, connections, and behavior are declared in a single config file. T
         "maxBudgetPerTaskUsd": 3.00,
         "maxTurnsPerTask": 20,
         "terminatesOnEmpty": false,
-        "allowedTools": ["Read", "Grep", "Glob", "Bash"]  // no Write/Edit = read-only
+        "allowedTools": ["Read", "Grep", "Glob", "Bash"]  // Write/Edit 없음 = 읽기 전용
       }
     },
 
     "message": {
-      "routingStrategy": "explicit",   // canContact enforced; LLM picks recipient from whitelist
+      "routingStrategy": "explicit",   // canContact 강제; LLM이 화이트리스트에서 수신자 선택
       "format": "envelope",
-      "maxRoutingCycles": 3            // max rework cycles before escalating to failed
+      "maxRoutingCycles": 3            // 최대 수정 사이클 수, 초과 시 failed로 전환
     },
     "termination": {
       "gracePeriodMs": 30000
@@ -212,24 +213,24 @@ All bot roles, connections, and behavior are declared in a single config file. T
 }
 ```
 
-**Key config fields replacing all hardcoded PRD concepts:**
+**하드코딩된 PRD 개념을 대체하는 핵심 config 필드:**
 
-| OLD (hardcoded) | NEW (config field) |
+| 기존 (하드코딩) | 변경 후 (config 필드) |
 | --- | --- |
-| Fixed bot names | `bots: Record<string, BotDefinition>` — any string key |
-| `.botspace/` path | `swarmGraph.workspacePath` |
-| `bot-pd` hardcoded as entry | `entryBots: string[]` — any bot(s) |
-| `bot-pd` hardcoded as terminator | `terminatesOnEmpty: boolean` per-bot |
-| Implicit `canContact` | `canContact: string[]` whitelist per bot |
-| Typed message enum | Free-form `subject` string in envelope |
-| `docs/task*.md` hardcoded for `bot-pd` | `watchesFiles: string[]` glob per bot |
-| System prompts in `bot-configs.ts` | `systemPrompt` inline or `systemPromptFile` path |
+| 고정된 봇 이름 | `bots: Record<string, BotDefinition>` — 임의의 문자열 키 |
+| `.botspace/` 경로 | `swarmGraph.workspacePath` |
+| `bot-pd`가 진입점으로 하드코딩 | `entryBots: string[]` — 임의의 봇 지정 가능 |
+| `bot-pd`가 종료자로 하드코딩 | `terminatesOnEmpty: boolean` (봇별 설정) |
+| 암묵적인 `canContact` | `canContact: string[]` (봇별 화이트리스트) |
+| 타입이 정해진 메시지 열거형 | 봉투의 자유 형식 `subject` 문자열 |
+| `bot-pd`의 `docs/task*.md` 하드코딩 | `watchesFiles: string[]` (봇별 glob) |
+| `bot-configs.ts`의 시스템 프롬프트 | `systemPrompt` 인라인 또는 `systemPromptFile` 경로 |
 
 ---
 
-### 10.3 Generic Message Envelope
+### 10.3 범용 메시지 봉투 (Generic Message Envelope)
 
-All inter-bot messages use a single envelope format written to each bot's inbox as markdown checkboxes — parsed by the **existing `parseTasks` regex with zero code changes**:
+모든 봇 간 메시지는 각 봇의 inbox에 마크다운 체크박스로 작성되는 단일 봉투 형식을 사용한다 — **코드 변경 없이 기존 `parseTasks` 정규식으로 파싱된다:**
 
 ```markdown
 # .botspace/inbox/worker.md
@@ -239,28 +240,28 @@ All inter-bot messages use a single envelope format written to each bot's inbox 
 - [x] MSG-041 | from:coordinator | to:worker | subject:ASSIGN | taskId:task-000 | Initial impl task
 ```
 
-| Field | Type | Description |
+| 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `MSG-NNN` | auto-increment | Unique message ID |
-| `from` | bot name | Sender (validated against `canContact`) |
-| `to` | bot name | Recipient |
-| `subject` | free string | Semantic label — **no enum**, domain-defined in prompts |
-| `taskId` | string? | Optional registry reference |
-| trailing text | free string | Human-readable context or file paths |
+| `MSG-NNN` | 자동 증가 | 고유 메시지 ID |
+| `from` | 봇 이름 | 발신자 (`canContact` 대조 검증) |
+| `to` | 봇 이름 | 수신자 |
+| `subject` | 자유 문자열 | 의미 레이블 — **열거형 없음**, 프롬프트에서 도메인 정의 |
+| `taskId` | string? | 선택적 registry 참조 |
+| 뒤따르는 텍스트 | 자유 문자열 | 사람이 읽기 위한 컨텍스트 또는 파일 경로 |
 
-**`subject` is free-form:** `ASSIGN`, `REWORK`, `QUESTION`, `COPY_READY`, `TESTS_FAILED` — the vocabulary is defined in `prompts/*.md` files, not in code. Changing the workflow vocabulary requires only prompt edits.
+**`subject`는 자유 형식:** `ASSIGN`, `REWORK`, `QUESTION`, `COPY_READY`, `TESTS_FAILED` — 어휘는 코드가 아닌 `prompts/*.md` 파일에서 정의된다. 워크플로우 어휘를 바꾸려면 프롬프트만 수정하면 된다.
 
-**Inbox as task queue:** Each bot's ClaudeBot instance uses its inbox file as its `tasksFile`. Unread messages (`[ ]`) are tasks. Processed messages become `[x]`. The existing `parseTasks` + `updateTaskInFile` machinery handles this automatically.
+**inbox를 작업 큐로 활용:** 각 봇의 ClaudeBot 인스턴스는 inbox 파일을 `tasksFile`로 사용한다. 읽지 않은 메시지(`[ ]`)는 작업이 되고, 처리된 메시지는 `[x]`가 된다. 기존 `parseTasks` + `updateTaskInFile` 로직이 이를 자동으로 처리한다.
 
 ---
 
-### 10.4 Communication Channels
+### 10.4 통신 채널
 
-Two channels operate simultaneously:
+두 채널이 동시에 동작한다:
 
-#### Channel A: Shared Bulletin Board — `{workspacePath}/board.md`
+#### 채널 A: 공유 게시판 — `{workspacePath}/board.md`
 
-A **public, append-only** markdown log visible to all bots. Every significant action is posted here for audit trail and broadcast.
+모든 봇이 볼 수 있는 **공개, 추가 전용** 마크다운 로그. 감사 추적과 브로드캐스트를 위해 모든 주요 행동이 여기에 기록된다.
 
 ```markdown
 ## 2026-02-28T14:00:00Z | coordinator | ASSIGN
@@ -276,84 +277,84 @@ Delegating task-001 "Implement JWT auth" to worker.
 task-001 marked [x]. Picking up task-002.
 ```
 
-#### Channel B: Direct Inbox — `{workspacePath}/inbox/{botName}.md`
+#### 채널 B: 직접 inbox — `{workspacePath}/inbox/{botName}.md`
 
-Per-bot inbox file (see envelope format above). The orchestrator enforces `canContact` before writing — messages to unauthorized bots are rejected and logged to `board.md`.
+봇별 inbox 파일 (위의 봉투 형식 참고). 오케스트레이터는 쓰기 전에 `canContact`를 강제 적용한다 — 허가받지 않은 봇에게 보내는 메시지는 거부되고 `board.md`에 기록된다.
 
 ---
 
-### 10.5 Task State Machine
+### 10.5 작업 상태 머신
 
-Generic states tracked in `{workspacePath}/registry.json` — state names are the same regardless of bot names or domain:
+`{workspacePath}/registry.json`에서 추적하는 범용 상태 — 봇 이름이나 도메인에 관계없이 동일한 상태 이름을 사용:
 
 ```text
 pending ──► assigned ──► in_progress ──► reviewing ──► done
                 │              │               │
-                │           paused ────────────┘  (waiting for clarification)
+                │           paused ────────────┘  (clarification 대기 중)
                 │                               │
                 └───────────────────────────────► failed
-                        (maxRoutingCycles exceeded)
+                        (maxRoutingCycles 초과)
 ```
 
-| State | Set By | Trigger |
+| 상태 | 설정 주체 | 트리거 |
 | --- | --- | --- |
-| `pending` | entry bot | Task found in `watchesFiles` |
-| `assigned` | entry bot | Task message sent to worker |
-| `in_progress` | worker | Worker acknowledges task |
-| `paused` | worker | Worker sends QUESTION to coordinator |
-| `reviewing` | worker | Worker sends READY_FOR_REVIEW to reviewer |
-| `done` | reviewer | Reviewer sends APPROVED to coordinator |
-| `failed` | reviewer / coordinator | `maxRoutingCycles` exceeded |
+| `pending` | entry bot | `watchesFiles`에서 작업 발견 |
+| `assigned` | entry bot | worker에게 작업 메시지 전송 |
+| `in_progress` | worker | worker가 작업 수락 확인 |
+| `paused` | worker | worker가 coordinator에게 QUESTION 전송 |
+| `reviewing` | worker | worker가 reviewer에게 READY_FOR_REVIEW 전송 |
+| `done` | reviewer | reviewer가 coordinator에게 APPROVED 전송 |
+| `failed` | reviewer / coordinator | `maxRoutingCycles` 초과 |
 
-State names are generic — workflows use the same states regardless of domain (software, research, data, content).
+상태 이름은 범용적이다 — 도메인(소프트웨어, 연구, 데이터, 콘텐츠)에 관계없이 동일한 상태를 사용한다.
 
 ---
 
-### 10.6 Workspace File Structure
+### 10.6 워크스페이스 파일 구조
 
-Workspace layout derives from config — no hardcoded paths:
+워크스페이스 레이아웃은 config에서 파생된다 — 하드코딩된 경로 없음:
 
 ```text
-{workspacePath}/                  # Configurable via swarmGraph.workspacePath
-├── board.md                      # Shared bulletin board (append-only)
-├── registry.json                 # Canonical task state machine
+{workspacePath}/                  # swarmGraph.workspacePath로 설정 가능
+├── board.md                      # 공유 게시판 (추가 전용)
+├── registry.json                 # 작업 상태 머신 (정규 소스)
 ├── inbox/
-│   ├── {botName-1}.md            # Direct messages TO botName-1
-│   ├── {botName-2}.md            # Direct messages TO botName-2
-│   └── {botName-N}.md            # One inbox per bot declared in config
-└── {botName}/                    # Per-bot workspace (one dir per bot)
-    └── sessions.json             # Per-bot cost/session history
+│   ├── {botName-1}.md            # botName-1에게 보내는 직접 메시지
+│   ├── {botName-2}.md            # botName-2에게 보내는 직접 메시지
+│   └── {botName-N}.md            # config에 선언된 봇별 inbox 1개
+└── {botName}/                    # 봇별 워크스페이스 (봇당 디렉터리 1개)
+    └── sessions.json             # 봇별 비용/세션 히스토리
 ```
 
-Prompt files live outside `workspacePath` in user-defined locations:
+프롬프트 파일은 사용자 정의 위치에 `workspacePath` 외부에 위치한다:
 
 ```text
 prompts/
-├── coordinator.md                # System prompt for coordinator bot
-├── worker.md                     # System prompt for worker bot
-└── reviewer.md                   # System prompt for reviewer bot
+├── coordinator.md                # coordinator 봇의 시스템 프롬프트
+├── worker.md                     # worker 봇의 시스템 프롬프트
+└── reviewer.md                   # reviewer 봇의 시스템 프롬프트
 ```
 
 ---
 
-### 10.7 New Components (`src/swarm/`)
+### 10.7 새로운 컴포넌트 (`src/swarm/`)
 
-All components are fully generic — **zero hardcoded bot names** anywhere:
+모든 컴포넌트는 완전히 범용적이다 — **어디에도 봇 이름이 하드코딩되지 않는다:**
 
-| File | Description |
+| 파일 | 설명 |
 | --- | --- |
-| `types.ts` | `BotDefinition`, `SwarmGraphConfig` (Zod schemas), `BotMessage`, `RegistryEntry` |
-| `config-loader.ts` | `loadSwarmConfig()` — validates `claudebot.swarm.json` |
-| `bot-factory.ts` | `buildBotConfig(botName, def, root)` → `ClaudeBotConfig` — derives per-bot config from `BotDefinition` |
-| `orchestrator.ts` | `SwarmOrchestrator` — loops `Object.entries(config.swarmGraph.bots)`, spawns N `ClaudeBot` instances |
-| `inbox.ts` | `InboxManager` — writes/reads inbox files, enforces `canContact` whitelist |
-| `board.ts` | `BulletinBoard` — appends timestamped entries to `board.md` |
-| `registry.ts` | `RegistryManager` — atomic read/write of `registry.json` |
-| `workspace.ts` | `bootstrapWorkspace()` — creates dirs from config on first run |
+| `types.ts` | `BotDefinition`, `SwarmGraphConfig` (Zod 스키마), `BotMessage`, `RegistryEntry` |
+| `config-loader.ts` | `loadSwarmConfig()` — `claudebot.swarm.json` 유효성 검사 |
+| `bot-factory.ts` | `buildBotConfig(botName, def, root)` → `ClaudeBotConfig` — `BotDefinition`으로부터 봇별 config 파생 |
+| `orchestrator.ts` | `SwarmOrchestrator` — `Object.entries(config.swarmGraph.bots)`를 순회하며 N개의 `ClaudeBot` 인스턴스 생성 |
+| `inbox.ts` | `InboxManager` — inbox 파일 읽기/쓰기, `canContact` 화이트리스트 강제 |
+| `board.ts` | `BulletinBoard` — `board.md`에 타임스탬프 항목 추가 |
+| `registry.ts` | `RegistryManager` — `registry.json` 원자적 읽기/쓰기 |
+| `workspace.ts` | `bootstrapWorkspace()` — 최초 실행 시 config 기반으로 디렉터리 생성 |
 
-**Existing components unchanged:** `ClaudeBot`, `parseTasks`, `updateTaskInFile`, `SdkExecutor`, `SessionManager`. Bot differentiation comes entirely from `systemPromptPrefix` + `allowedTools` + `tasksFile` — all derived from `BotDefinition` in `bot-factory.ts`.
+**기존 컴포넌트는 변경 없음:** `ClaudeBot`, `parseTasks`, `updateTaskInFile`, `SdkExecutor`, `SessionManager`. 봇 간 차별화는 전적으로 `systemPromptPrefix` + `allowedTools` + `tasksFile`에서 오며, 이 모두는 `bot-factory.ts`의 `BotDefinition`에서 파생된다.
 
-**Orchestrator core (generic, no hardcoded names):**
+**오케스트레이터 핵심 (범용, 이름 하드코딩 없음):**
 
 ```typescript
 // src/swarm/orchestrator.ts
@@ -366,23 +367,23 @@ await Promise.all(instances.map(({ bot }) => bot.run()));
 
 ---
 
-### 10.8 Multiple Team Configurations (Same Runtime, Different Config)
+### 10.8 다양한 팀 구성 (동일한 런타임, 다른 config)
 
-The same `SwarmOrchestrator` code runs all of these with zero changes — only `claudebot.swarm.json` differs:
+동일한 `SwarmOrchestrator` 코드가 코드 변경 없이 아래 모든 구성을 실행한다 — `claudebot.swarm.json`만 다르다:
 
-| Team Type | Entry Bot | Bots | `watchesFiles` | `terminatesOnEmpty` |
+| 팀 유형 | 진입 봇 | 봇 구성 | `watchesFiles` | `terminatesOnEmpty` |
 | --- | --- | --- | --- | --- |
-| Software Dev | `coordinator` | coordinator, worker, reviewer | `docs/tasks/*.md` | coordinator |
-| Research | `lead` | lead, researcher, writer, editor | `docs/briefs/*.md` | lead |
-| Data Pipeline | `planner` | planner, coder, tester | `docs/pipelines/*.md` | planner |
-| Content Marketing | `strategist` | strategist, copywriter, seo | `docs/requests/*.md` | strategist |
+| 소프트웨어 개발 | `coordinator` | coordinator, worker, reviewer | `docs/tasks/*.md` | coordinator |
+| 연구 | `lead` | lead, researcher, writer, editor | `docs/briefs/*.md` | lead |
+| 데이터 파이프라인 | `planner` | planner, coder, tester | `docs/pipelines/*.md` | planner |
+| 콘텐츠 마케팅 | `strategist` | strategist, copywriter, seo | `docs/requests/*.md` | strategist |
 
-**The PD/Dev/QA scenario from the original design is expressed as:**
-`coordinator` (Opus, `terminatesOnEmpty: true`, `watchesFiles: ["docs/task*.md"]`) + `worker` (Sonnet, full tools) + `reviewer` (Sonnet, read-only tools). Identical behavior, generic names.
+**원래 설계의 PD/Dev/QA 시나리오는 다음과 같이 표현된다:**
+`coordinator` (Opus, `terminatesOnEmpty: true`, `watchesFiles: ["docs/task*.md"]`) + `worker` (Sonnet, 전체 도구) + `reviewer` (Sonnet, 읽기 전용 도구). 동일한 동작, 범용 이름.
 
 ---
 
-### 10.9 Architecture Diagram
+### 10.9 아키텍처 다이어그램
 
 ```mermaid
 flowchart TD
@@ -415,34 +416,34 @@ flowchart TD
 
 ---
 
-### 10.10 Design Decisions
+### 10.10 설계 결정 사항
 
-**Why free-form `subject` instead of a typed enum?**
-An enum (`TASK_ASSIGNMENT`, `IMPL_COMPLETE`, etc.) belongs to a specific domain and breaks immediately for other workflows (`COPY_READY`, `TESTS_FAILED`, `RESEARCH_DONE`). The orchestrator never interprets `subject` — it only routes the envelope. Subject semantics live in `prompts/*.md`, allowing vocabulary changes with zero code edits.
+**왜 타입이 정해진 열거형 대신 자유 형식 `subject`를 사용하는가?**
+열거형(`TASK_ASSIGNMENT`, `IMPL_COMPLETE` 등)은 특정 도메인에 속하며, 다른 워크플로우(`COPY_READY`, `TESTS_FAILED`, `RESEARCH_DONE`)에서는 즉시 맞지 않게 된다. 오케스트레이터는 `subject`를 해석하지 않는다 — 봉투를 라우팅할 뿐이다. subject의 의미는 `prompts/*.md`에 있으며, 코드 수정 없이 어휘를 바꿀 수 있다.
 
-**Why `canContact` whitelist (explicit routing) instead of emergent LLM routing?**
-Explicit edges are auditable (all routing decisions logged in `board.md`), prevent silent failures, and stop bots from forming cycles not anticipated in the design. The LLM still decides *when* to message a contact and *which* permitted contact to choose — it just cannot route outside its declared whitelist.
+**왜 자율적인 LLM 라우팅 대신 `canContact` 화이트리스트(명시적 라우팅)를 사용하는가?**
+명시적 엣지는 감사 가능하고(`board.md`에 모든 라우팅 결정이 기록됨), 조용한 실패를 방지하며, 설계에서 예측하지 못한 사이클이 봇 간에 형성되는 것을 막는다. LLM은 여전히 언제 연락할지, 허가된 연락처 중 누구를 선택할지 결정한다 — 다만 선언된 화이트리스트 밖으로는 라우팅할 수 없다.
 
-**Why multi-process instead of SDK-native swarm?**
-SDK swarm runs within one `query()` call: top-down only, no lateral communication, state lost between runs. BotGraph requires bidirectional messaging (worker → coordinator for clarifications), multi-task lifecycle tracking, and state that survives restarts. Use SDK swarm for single complex task decomposition; use BotGraph for persistent multi-task pipelines.
+**왜 SDK 네이티브 스웜 대신 멀티 프로세스를 사용하는가?**
+SDK 스웜은 단일 `query()` 호출 내에서 실행된다 — 하향식만 가능, 측면 통신 없음, 실행 간 상태 손실. BotGraph는 양방향 메시징(clarification을 위한 worker → coordinator), 멀티 작업 수명주기 추적, 재시작 후에도 살아남는 상태를 필요로 한다. 단일 복잡 작업 분해에는 SDK 스웜을, 영속적인 멀티 작업 파이프라인에는 BotGraph를 사용한다.
 
-**Concurrency and file safety:**
-N bots may write to `registry.json` concurrently. Mitigation: a `.registry.lock` sentinel file with a timeout prevents concurrent overwrites. `board.md` is append-only — concurrent appends produce interleaved lines at worst, but no data corruption.
+**동시성과 파일 안전성:**
+N개의 봇이 `registry.json`에 동시에 쓸 수 있다. 대응책: 타임아웃이 있는 `.registry.lock` 센티넬 파일이 동시 덮어쓰기를 방지한다. `board.md`는 추가 전용으로, 동시 추가 시 최악의 경우 줄이 섞일 수 있으나 데이터 손상은 없다.
 
-**Loop termination:**
-The bot with `terminatesOnEmpty: true` monitors its `watchesFiles`. When all tasks are `done`/`failed` in the registry and no unchecked tasks remain, it posts `SWARM_COMPLETE` to `board.md`. The orchestrator monitors for this signal and calls `bot.abort()` on all instances after `gracePeriodMs`.
+**루프 종료:**
+`terminatesOnEmpty: true`로 설정된 봇이 `watchesFiles`를 모니터링한다. registry의 모든 작업이 `done`/`failed` 상태이고 미체크 작업이 남지 않으면, `board.md`에 `SWARM_COMPLETE`를 게시한다. 오케스트레이터가 이 신호를 감지하고 `gracePeriodMs` 후 모든 인스턴스에 `bot.abort()`를 호출한다.
 
 ---
 
-### 10.11 Implementation Roadmap
+### 10.11 구현 로드맵
 
-| Phase | Deliverable | Priority |
+| 단계 | 산출물 | 우선순위 |
 | --- | --- | --- |
-| Phase 2.1 | `src/swarm/types.ts` — Zod schemas for `BotDefinition`, `SwarmGraphConfig`, `BotMessage`, `RegistryEntry` | High |
-| Phase 2.2 | `src/swarm/config-loader.ts` + `bot-factory.ts` — config validation and per-bot config derivation | High |
-| Phase 2.3 | `src/swarm/inbox.ts` + `board.ts` + `registry.ts` + `workspace.ts` — communication data layer | High |
-| Phase 2.4 | `src/swarm/orchestrator.ts` — generic N-bot spawner with termination detection | High |
-| Phase 2.5 | `claudebot swarm` CLI command in `src/index.ts` | Medium |
-| Phase 2.6 | Example `claudebot.swarm.json` + `prompts/` for software dev team | Medium |
-| Phase 2.7 | Deadlock detection + stuck-task watchdog in orchestrator | Low |
-| Phase 2.8 | Cross-bot cost aggregation in `claudebot status --swarm` | Low |
+| Phase 2.1 | `src/swarm/types.ts` — `BotDefinition`, `SwarmGraphConfig`, `BotMessage`, `RegistryEntry`에 대한 Zod 스키마 | 높음 |
+| Phase 2.2 | `src/swarm/config-loader.ts` + `bot-factory.ts` — config 유효성 검사 및 봇별 config 파생 | 높음 |
+| Phase 2.3 | `src/swarm/inbox.ts` + `board.ts` + `registry.ts` + `workspace.ts` — 통신 데이터 계층 | 높음 |
+| Phase 2.4 | `src/swarm/orchestrator.ts` — 종료 감지 기능이 포함된 범용 N봇 스포너 | 높음 |
+| Phase 2.5 | `src/index.ts`의 `claudebot swarm` CLI 명령어 | 중간 |
+| Phase 2.6 | 소프트웨어 개발 팀을 위한 예시 `claudebot.swarm.json` + `prompts/` | 중간 |
+| Phase 2.7 | 오케스트레이터의 데드락 감지 + stuck-task 감시 | 낮음 |
+| Phase 2.8 | `claudebot status --swarm`의 봇 간 비용 집계 | 낮음 |

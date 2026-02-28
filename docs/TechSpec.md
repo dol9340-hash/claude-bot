@@ -1,22 +1,22 @@
-# ClaudeBot Technical Specification
+# ClaudeBot 기술 명세서
 
-> Version: 0.1.0 — Last Updated: 2026-02-28
-
----
-
-## 1. Overview
-
-**ClaudeBot** is an autonomous, queue-driven task orchestrator that transforms Claude from a conversational assistant into a proactive, goal-driven agent running continuously in the background.
-
-**Core philosophy:** _Stop just chatting with AI, and start delegating._
-
-Tasks are defined as markdown checkboxes in a file (e.g., `tasks.md`). ClaudeBot reads the queue, executes each task using Claude, marks results in-place (`[x]` or `[!]`), and moves on—unattended.
-
-**Key differentiator:** Hybrid dual-engine design allows billing via either Anthropic API key (SDK engine) or Claude Max subscription (CLI engine), with identical task queue behavior.
+> 버전: 0.1.0 — 최종 업데이트: 2026-02-28
 
 ---
 
-## 2. Architecture Overview
+## 1. 개요
+
+**ClaudeBot**은 자율적인 큐 기반 태스크 오케스트레이터로, Claude를 대화형 어시스턴트에서 벗어나 백그라운드에서 지속적으로 실행되는 능동적이고 목표 지향적인 에이전트로 전환합니다.
+
+**핵심 철학:** _AI와 단순히 대화하는 것을 멈추고, 위임을 시작하라._
+
+태스크는 파일(예: `tasks.md`) 내 마크다운 체크박스로 정의됩니다. ClaudeBot은 큐를 읽고, Claude를 사용하여 각 태스크를 실행하며, 결과를 파일에 직접 표시(`[x]` 또는 `[!]`)하고, 무인 상태로 계속 진행합니다.
+
+**핵심 차별점:** 하이브리드 이중 엔진 설계를 통해 Anthropic API 키(SDK 엔진) 또는 Claude Max 구독(CLI 엔진) 중 하나를 선택하여 과금할 수 있으며, 동일한 태스크 큐 동작을 제공합니다.
+
+---
+
+## 2. 아키텍처 개요
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -26,8 +26,8 @@ Tasks are defined as markdown checkboxes in a file (e.g., `tasks.md`). ClaudeBot
 └────────────────────┬────────────────────────────────────────┘
                      │
           ┌──────────▼──────────┐
-          │   src/config.ts     │  Zod-validated config
-          │   src/bot.ts        │  Orchestration loop
+          │   src/config.ts     │  Zod 검증 설정
+          │   src/bot.ts        │  오케스트레이션 루프
           └──────┬────────┬─────┘
                  │        │
     ┌────────────▼──┐  ┌──▼────────────┐
@@ -45,149 +45,151 @@ Tasks are defined as markdown checkboxes in a file (e.g., `tasks.md`). ClaudeBot
   │  sdk-executor.ts│  │  cli-executor.ts  │
   │                 │  │                   │
   │ query() async   │  │ spawn('claude')   │
-  │ Exact cost      │  │ stream-json parse │
-  │ Native subagents│  │ Max subscription  │
-  │ API Key billing │  │ No cost tracking  │
+  │ 정확한 비용     │  │ stream-json 파싱  │
+  │ 네이티브 서브에이전트│  │ Max 구독         │
+  │ API Key 과금    │  │ 비용 추적 불가    │
   └──────────┬──────┘  └────────┬──────────┘
              └────────┬─────────┘
                       │
           ┌───────────▼───────────────┐
-          │    Result Processing      │
+          │    결과 처리              │
           │  SessionManager.record()  │
           │  CostTracker.record()     │
           │  writer.updateTaskInFile()│
           └───────────────────────────┘
                       │
           ┌───────────▼───────────────┐
-          │   Persistent Storage      │
+          │   영속 스토리지           │
           │  .claudebot/sessions.json │
-          │  tasks.md (checkbox state)│
+          │  tasks.md (체크박스 상태) │
           └───────────────────────────┘
 ```
 
 ---
 
-## 3. Technology Stack
+## 3. 기술 스택
 
-| Component         | Technology                         | Version  |
+| 구성 요소         | 기술                               | 버전     |
 |-------------------|------------------------------------|----------|
-| Language          | TypeScript (ESM, strict mode)      | ^5.7.0   |
-| Runtime           | Node.js                            | >=18.0.0 |
-| Primary Engine    | @anthropic-ai/claude-agent-sdk     | ^0.2.62  |
-| CLI Framework     | Commander.js                       | ^13.1.0  |
-| Logging           | Pino + pino-pretty                 | ^9.6.0   |
-| Config Validation | Zod                                | ^4.0.0   |
-| Module System     | ES2022, Node16 resolution          | —        |
-| Build Tool        | tsc (TypeScript compiler)          | —        |
-| Dev Runner        | tsx                                | ^4.19.0  |
+| 언어              | TypeScript (ESM, strict 모드)      | ^5.7.0   |
+| 런타임            | Node.js                            | >=18.0.0 |
+| 주요 엔진         | @anthropic-ai/claude-agent-sdk     | ^0.2.62  |
+| CLI 프레임워크    | Commander.js                       | ^13.1.0  |
+| 로깅              | Pino + pino-pretty                 | ^9.6.0   |
+| 설정 검증         | Zod                                | ^4.0.0   |
+| 모듈 시스템       | ES2022, Node16 resolution          | —        |
+| 빌드 도구         | tsc (TypeScript 컴파일러)          | —        |
+| 개발용 실행기     | tsx                                | ^4.19.0  |
 
 ---
 
-## 4. Core Components
+## 4. 핵심 컴포넌트
 
-### 4.1 CLI Entry Point — [src/index.ts](../src/index.ts)
+### 4.1 CLI 진입점 — [src/index.ts](../src/index.ts)
 
-Commander.js-based CLI with two commands.
+Commander.js 기반 CLI로, 두 가지 명령어를 제공합니다.
 
 #### `claudebot run`
 
-Executes all pending tasks in the queue.
+큐에 있는 모든 대기 중인 태스크를 실행합니다.
 
-| Flag | Type | Default | Description |
+| 플래그 | 타입 | 기본값 | 설명 |
 |------|------|---------|-------------|
-| `-f, --file <path>` | string | config value | Tasks markdown file path |
-| `-c, --config <path>` | string | auto-detected | Config file path |
-| `-m, --model <name>` | string | `claude-sonnet-4-6` | Claude model ID |
-| `-e, --engine <type>` | `sdk\|cli` | `sdk` | Execution engine |
-| `--max-retries <n>` | number | 2 | Max retry attempts per task |
-| `--max-budget <usd>` | number | 20.00 | Total budget limit (USD) |
-| `--timeout <ms>` | number | 600000 | Per-task timeout (ms) |
-| `--stop-on-failure` | flag | false | Halt queue on first failure |
-| `--permission-mode <mode>` | string | `acceptEdits` | Claude permission mode |
-| `--log-level <level>` | string | `info` | Log verbosity |
-| `--watch-interval <ms>` | number | 20000 | Poll interval in watch mode |
-| `--dry-run` | flag | false | Parse tasks, don't execute |
+| `-f, --file <path>` | string | 설정값 | 태스크 마크다운 파일 경로 |
+| `-c, --config <path>` | string | 자동 감지 | 설정 파일 경로 |
+| `-m, --model <name>` | string | `claude-sonnet-4-6` | Claude 모델 ID |
+| `-e, --engine <type>` | `sdk\|cli` | `sdk` | 실행 엔진 |
+| `--max-retries <n>` | number | 2 | 태스크당 최대 재시도 횟수 |
+| `--max-budget <usd>` | number | 20.00 | 총 예산 한도 (USD) |
+| `--timeout <ms>` | number | 600000 | 태스크당 타임아웃 (ms) |
+| `--stop-on-failure` | flag | false | 첫 번째 실패 시 큐 중단 |
+| `--permission-mode <mode>` | string | `acceptEdits` | Claude 권한 모드 |
+| `--log-level <level>` | string | `info` | 로그 상세도 |
+| `--watch-interval <ms>` | number | 20000 | 와치 모드 폴링 간격 |
+| `--dry-run` | flag | false | 태스크 파싱만, 실행 안 함 |
 
-Registers SIGINT/SIGTERM handlers to call `bot.abort()` for graceful shutdown.
+SIGINT/SIGTERM 핸들러를 등록하여 정상 종료를 위해 `bot.abort()`를 호출합니다.
 
 #### `claudebot status`
 
-Reads `.claudebot/sessions.json` and displays:
-- Total accumulated cost (USD)
-- Total task count
-- Last 10 session records (line, status, cost, duration, prompt snippet)
+`.claudebot/sessions.json`을 읽어 다음 정보를 출력합니다:
+
+- 누적 총 비용 (USD)
+- 총 태스크 수
+- 최근 10개의 세션 레코드 (줄 번호, 상태, 비용, 소요 시간, 프롬프트 요약)
 
 ---
 
-### 4.2 Configuration — [src/config.ts](../src/config.ts)
+### 4.2 설정 — [src/config.ts](../src/config.ts)
 
-**File search order:** `claudebot.config.json` → `claudebot.config.js` → `claudebot.config.ts` (from `process.cwd()`).
+**파일 탐색 순서:** `claudebot.config.json` → `claudebot.config.js` → `claudebot.config.ts` (`process.cwd()` 기준).
 
-**Zod schema with defaults:**
+**Zod 스키마 및 기본값:**
 
 ```typescript
 {
-  engine: 'sdk' | 'cli'               // default: 'sdk'
-  tasksFile: string                    // default: 'docs/todo.md'
-  cwd: string                          // default: process.cwd()
-  model?: string                       // default: undefined (SDK picks default)
-  permissionMode: 'default'            // default: 'acceptEdits'
+  engine: 'sdk' | 'cli'               // 기본값: 'sdk'
+  tasksFile: string                    // 기본값: 'docs/todo.md'
+  cwd: string                          // 기본값: process.cwd()
+  model?: string                       // 기본값: undefined (SDK 기본값 사용)
+  permissionMode: 'default'            // 기본값: 'acceptEdits'
                | 'acceptEdits'
                | 'bypassPermissions'
-  maxBudgetPerTaskUsd?: number         // default: undefined (no per-task limit)
-  maxTotalBudgetUsd?: number           // default: undefined (no global limit)
-  taskTimeoutMs: number                // default: 600_000 (10 min)
-  maxRetries: number                   // default: 2
-  stopOnFailure: boolean               // default: false
-  sessionStorePath: string             // default: '.claudebot/sessions.json'
-  logLevel: 'debug'|'info'|'warn'|'error' // default: 'info'
-  watchIntervalMs: number              // default: 20_000 (20 sec)
-  swarm?: SwarmConfig                  // optional swarm config
+  maxBudgetPerTaskUsd?: number         // 기본값: undefined (태스크당 한도 없음)
+  maxTotalBudgetUsd?: number           // 기본값: undefined (전체 한도 없음)
+  taskTimeoutMs: number                // 기본값: 600_000 (10분)
+  maxRetries: number                   // 기본값: 2
+  stopOnFailure: boolean               // 기본값: false
+  sessionStorePath: string             // 기본값: '.claudebot/sessions.json'
+  logLevel: 'debug'|'info'|'warn'|'error' // 기본값: 'info'
+  watchIntervalMs: number              // 기본값: 20_000 (20초)
+  swarm?: SwarmConfig                  // 선택적 스웜 설정
 }
 ```
 
-CLI flags are merged on top of file config (CLI flags take precedence).
+CLI 플래그는 파일 설정 위에 병합됩니다 (CLI 플래그가 우선).
 
 ---
 
-### 4.3 Bot Orchestrator — [src/bot.ts](../src/bot.ts)
+### 4.3 봇 오케스트레이터 — [src/bot.ts](../src/bot.ts)
 
-**Class:** `ClaudeBot`
+**클래스:** `ClaudeBot`
 
-**Constructor:** `new ClaudeBot(config: ClaudeBotConfig, logger: Logger)`
+**생성자:** `new ClaudeBot(config: ClaudeBotConfig, logger: Logger)`
 
-Internally creates:
-- `IExecutor` via `createExecutor(config.engine)`
-- `SessionManager` for persistent recording
-- `CostTracker` for budget enforcement
-- `AbortController` for graceful shutdown
+내부적으로 다음을 생성합니다:
 
-#### Methods
+- `IExecutor` — `createExecutor(config.engine)` 호출
+- `SessionManager` — 영속 기록용
+- `CostTracker` — 예산 집행용
+- `AbortController` — 정상 종료용
 
-| Method | Signature | Description |
+#### 메서드
+
+| 메서드 | 시그니처 | 설명 |
 |--------|-----------|-------------|
-| `run()` | `(): Promise<BotRunResult>` | Main entry point. Runs all pending tasks. |
-| `abort()` | `(): void` | Signals shutdown. Current task completes, queue stops. |
-| `executeWithRetry()` | `(task): Promise<TaskResult>` | Wraps executor with exponential backoff. |
-| `sleep()` | `(ms): Promise<void>` | Abort-aware sleep for watch mode polling. |
+| `run()` | `(): Promise<BotRunResult>` | 주 진입점. 모든 대기 태스크를 실행합니다. |
+| `abort()` | `(): void` | 종료 신호 전송. 현재 태스크 완료 후 큐 정지. |
+| `executeWithRetry()` | `(task): Promise<TaskResult>` | 지수 백오프로 executor를 래핑합니다. |
+| `sleep()` | `(ms): Promise<void>` | 와치 모드 폴링을 위한 중단 인식 슬립. |
 
-#### Task Execution Loop
+#### 태스크 실행 루프
 
 ```
 parseTasks(tasksFile)
-  → filter pending tasks
-  → for each task:
-      check budget → skip if over limit
+  → 대기 중인 태스크 필터링
+  → 각 태스크에 대해:
+      예산 확인 → 한도 초과 시 건너뜀
       executeWithRetry(task)
         → executor.execute(task, config, logger)
-        → on failure: exponential backoff, max maxRetries attempts
-      updateTaskInFile(task, result)   // [x] or [!]
+        → 실패 시: 지수 백오프, 최대 maxRetries 재시도
+      updateTaskInFile(task, result)   // [x] 또는 [!]
       sessionManager.record(result)
       costTracker.record(result.costUsd)
-  → if no pending tasks && watch mode: sleep(watchIntervalMs), loop
+  → 대기 태스크 없음 && 와치 모드: sleep(watchIntervalMs), 루프
 ```
 
-#### Return Type: `BotRunResult`
+#### 반환 타입: `BotRunResult`
 
 ```typescript
 {
@@ -203,9 +205,9 @@ parseTasks(tasksFile)
 
 ---
 
-### 4.4 Execution Engines
+### 4.4 실행 엔진
 
-#### IExecutor Interface — [src/engine/types.ts](../src/engine/types.ts)
+#### IExecutor 인터페이스 — [src/engine/types.ts](../src/engine/types.ts)
 
 ```typescript
 interface IExecutor {
@@ -224,43 +226,43 @@ interface ExecutorCallbacks {
 }
 ```
 
-#### SDK Executor — [src/engine/sdk-executor.ts](../src/engine/sdk-executor.ts) ✅ Working
+#### SDK Executor — [src/engine/sdk-executor.ts](../src/engine/sdk-executor.ts) ✅ 작동 중
 
-**Billing:** Anthropic API Key (per-token)
-**Cost tracking:** Exact (`SDKResultMessage.total_cost_usd`)
+**과금:** Anthropic API Key (토큰당 과금)
+**비용 추적:** 정확한 값 (`SDKResultMessage.total_cost_usd`)
 
-**Execution flow:**
+**실행 흐름:**
 
-1. Create `AbortController` with `taskTimeoutMs` deadline
-2. Build `AgentSDKOptions`:
-   - `model` (from config or task tags)
-   - `maxTurns` (from task tags or undefined)
-   - `permissionMode` (from config)
-   - `agents` (if swarm config present)
-3. Call `query(prompt, options)` — returns async generator
-4. Iterate messages from generator:
-   - `type: 'system', subtype: 'init'` → capture `session_id`
-   - `type: 'result'` → capture `total_cost_usd`, `duration_ms`, `is_error`
-5. Return `TaskResult` with exact cost
+1. `taskTimeoutMs` 데드라인으로 `AbortController` 생성
+2. `AgentSDKOptions` 구성:
+   - `model` (설정 또는 태스크 태그에서)
+   - `maxTurns` (태스크 태그에서 또는 undefined)
+   - `permissionMode` (설정에서)
+   - `agents` (스웜 설정이 있을 경우)
+3. `query(prompt, options)` 호출 — 비동기 제너레이터 반환
+4. 제너레이터에서 메시지 순회:
+   - `type: 'system', subtype: 'init'` → `session_id` 캡처
+   - `type: 'result'` → `total_cost_usd`, `duration_ms`, `is_error` 캡처
+5. 정확한 비용이 포함된 `TaskResult` 반환
 
-**Verified working:** 2 tasks executed successfully ($0.1094 total) on 2026-02-27.
+**검증 완료:** 2026-02-27에 태스크 2개 성공적으로 실행 (총 $0.1094).
 
-#### CLI Executor — [src/engine/cli-executor.ts](../src/engine/cli-executor.ts) ✅ Working
+#### CLI Executor — [src/engine/cli-executor.ts](../src/engine/cli-executor.ts) ✅ 작동 중
 
-**Billing:** Claude Max subscription (flat rate)
-**Cost tracking:** Unavailable (returns `-1`)
+**과금:** Claude Max 구독 (정액 요금)
+**비용 추적:** 불가능 (`-1` 반환)
 
-**Execution flow:**
+**실행 흐름:**
 
-1. Build CLI args: `-p <prompt> --output-format stream-json --verbose [--model] [--max-turns] [--permission-mode]`
-2. `spawn('claude', args)` — close stdin immediately to prevent TTY hang
-3. Parse newline-delimited JSON from stdout:
-   - `type: 'system', subtype: 'init'` → capture `session_id`
-   - `type: 'result'` → capture `is_error`, `cost_usd`
-4. Handle process exit code
-5. Apply `AbortController` timeout
+1. CLI 인수 구성: `-p <prompt> --output-format stream-json --verbose [--model] [--max-turns] [--permission-mode]`
+2. `spawn('claude', args)` — TTY 멈춤 방지를 위해 stdin 즉시 닫기
+3. stdout에서 개행 구분 JSON 파싱:
+   - `type: 'system', subtype: 'init'` → `session_id` 캡처
+   - `type: 'result'` → `is_error`, `cost_usd` 캡처
+4. 프로세스 종료 코드 처리
+5. `AbortController` 타임아웃 적용
 
-**Verified working:** 8 tasks executed successfully (~$0.586 CLI subscription total) on 2026-02-27 to 2026-02-28.
+**검증 완료:** 2026-02-27 ~ 2026-02-28에 태스크 8개 성공적으로 실행 (CLI 구독 총 ~$0.586).
 
 #### Engine Factory — [src/engine/factory.ts](../src/engine/factory.ts)
 
@@ -268,40 +270,40 @@ interface ExecutorCallbacks {
 function createExecutor(engine: 'sdk' | 'cli'): IExecutor
 ```
 
-Simple factory — returns `SdkExecutor` or `CliExecutor` based on config.
+단순 팩토리 함수 — 설정에 따라 `SdkExecutor` 또는 `CliExecutor`를 반환합니다.
 
 ---
 
-### 4.5 Task System
+### 4.5 태스크 시스템
 
-#### Parser — [src/task/parser.ts](../src/task/parser.ts)
+#### 파서 — [src/task/parser.ts](../src/task/parser.ts)
 
-**Regex:** `^(\s*[-*]\s*)\[([ xX!])\]\s+(.+)$`
+**정규식:** `^(\s*[-*]\s*)\[([ xX!])\]\s+(.+)$`
 
-**Checkbox states:**
+**체크박스 상태:**
 
-| Marker | Status | Behavior |
+| 마커 | 상태 | 동작 |
 |--------|--------|----------|
-| `[ ]` | pending | Parsed and queued for execution |
-| `[x]` or `[X]` | completed | Skipped |
-| `[!]` | failed | Skipped |
+| `[ ]` | 대기 중 | 파싱 후 실행 큐에 추가 |
+| `[x]` 또는 `[X]` | 완료됨 | 건너뜀 |
+| `[!]` | 실패함 | 건너뜀 |
 
-**Inline tags** (stripped from prompt before execution):
+**인라인 태그** (실행 전 프롬프트에서 제거됨):
 
-| Tag | Field | Example |
+| 태그 | 필드 | 예시 |
 |-----|-------|---------|
 | `[cwd:path]` | `task.cwd` | `[cwd:src/utils]` |
 | `[budget:n]` | `task.maxBudgetUsd` | `[budget:0.50]` |
 | `[turns:n]` | `task.maxTurns` | `[turns:10]` |
 | `[agent:name]` | `task.agent` | `[agent:developer]` |
 
-**Task object:**
+**태스크 객체:**
 
 ```typescript
 interface Task {
-  line: number;          // 1-indexed line in file (for write-back)
-  rawText: string;       // Original line content
-  prompt: string;        // Cleaned text (tags removed)
+  line: number;          // 파일 내 1-indexed 줄 번호 (쓰기 복귀용)
+  rawText: string;       // 원본 줄 내용
+  prompt: string;        // 정제된 텍스트 (태그 제거됨)
   status: TaskStatus;    // 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
   cwd?: string;
   maxBudgetUsd?: number;
@@ -312,21 +314,21 @@ interface Task {
 }
 ```
 
-#### Writer — [src/task/writer.ts](../src/task/writer.ts)
+#### 라이터 — [src/task/writer.ts](../src/task/writer.ts)
 
-Updates the tasks file in-place after each execution:
+각 실행 후 태스크 파일을 제자리에서 업데이트합니다:
 
-- **Completed:** `[ ]` → `[x]`
-- **Failed:** `[ ]` → `[!]` + appends `<!-- FAILED: retry N -->`
-- **Line ending preservation:** Detects CRLF vs LF, maintains original format
+- **완료:** `[ ]` → `[x]`
+- **실패:** `[ ]` → `[!]` + `<!-- FAILED: retry N -->` 주석 추가
+- **줄 끝 보존:** CRLF vs LF를 감지하여 원본 형식 유지
 
 ---
 
-### 4.6 Session Management — [src/session/manager.ts](../src/session/manager.ts)
+### 4.6 세션 관리 — [src/session/manager.ts](../src/session/manager.ts)
 
-**Storage path:** `.claudebot/sessions.json` (configurable via `sessionStorePath`)
+**저장 경로:** `.claudebot/sessions.json` (`sessionStorePath`로 변경 가능)
 
-**SessionStore format:**
+**SessionStore 형식:**
 
 ```json
 {
@@ -337,7 +339,7 @@ Updates the tasks file in-place after each execution:
 }
 ```
 
-**SessionRecord schema:**
+**SessionRecord 스키마:**
 
 ```typescript
 interface SessionRecord {
@@ -353,18 +355,18 @@ interface SessionRecord {
 }
 ```
 
-Auto-loads on init, auto-saves after each `record()` call.
+초기화 시 자동 로드, `record()` 호출 후 자동 저장.
 
 ---
 
-### 4.7 Cost Tracker — [src/cost/tracker.ts](../src/cost/tracker.ts)
+### 4.7 비용 추적기 — [src/cost/tracker.ts](../src/cost/tracker.ts)
 
-In-memory tracker for the current run session.
+현재 실행 세션을 위한 인메모리 추적기입니다.
 
 ```typescript
 class CostTracker {
   record(costUsd: number): void;
-  isOverBudget(): boolean;          // checks against config.maxTotalBudgetUsd
+  isOverBudget(): boolean;          // config.maxTotalBudgetUsd에 대해 확인
   remainingBudget(): number | null;
   getSummary(): CostSummary;
 }
@@ -377,24 +379,24 @@ interface CostSummary {
 }
 ```
 
-Budget enforcement: `bot.ts` calls `isOverBudget()` before each task. If exceeded, remaining tasks are marked `skipped`.
+예산 집행: `bot.ts`는 각 태스크 전에 `isOverBudget()`을 호출합니다. 초과 시 나머지 태스크는 `skipped`로 표시됩니다.
 
 ---
 
-### 4.8 Utilities
+### 4.8 유틸리티
 
-#### AbortController Wrapper — [src/utils/abort.ts](../src/utils/abort.ts)
+#### AbortController 래퍼 — [src/utils/abort.ts](../src/utils/abort.ts)
 
 ```typescript
 function createAbortController(timeoutMs?: number): {
   controller: AbortController;
-  cleanup: () => void;   // clears the timeout timer
+  cleanup: () => void;   // 타임아웃 타이머 해제
 }
 ```
 
-Sets a `setTimeout` to call `controller.abort()` at the deadline. `cleanup()` must be called after task completes to prevent memory leaks.
+데드라인에 `controller.abort()`를 호출하는 `setTimeout`을 설정합니다. 메모리 누수 방지를 위해 태스크 완료 후 반드시 `cleanup()`을 호출해야 합니다.
 
-#### Retry Wrapper — [src/utils/retry.ts](../src/utils/retry.ts)
+#### 재시도 래퍼 — [src/utils/retry.ts](../src/utils/retry.ts)
 
 ```typescript
 function withRetry<T>(
@@ -405,33 +407,33 @@ function withRetry<T>(
 
 interface RetryOptions {
   maxRetries: number;
-  baseDelayMs: number;   // default: 1000
-  maxDelayMs: number;    // default: 30_000
+  baseDelayMs: number;   // 기본값: 1000
+  maxDelayMs: number;    // 기본값: 30_000
   logger?: Logger;
 }
 ```
 
-**Backoff formula:** `delay = min(baseDelayMs × 2^attempt, maxDelayMs)`
+**백오프 공식:** `delay = min(baseDelayMs × 2^attempt, maxDelayMs)`
 
 ---
 
-### 4.9 Multi-Agent Swarm — [src/agent/swarm.ts](../src/agent/swarm.ts)
+### 4.9 멀티 에이전트 스웜 — [src/agent/swarm.ts](../src/agent/swarm.ts)
 
-> **Status:** Framework defined. Not yet integrated into the main execution loop.
+> **상태:** 프레임워크 정의 완료. 주 실행 루프에 아직 통합되지 않음.
 
-Uses the Agent SDK's native `agents` option — no external message broker (Redis, SQLite) required.
+Agent SDK의 네이티브 `agents` 옵션 사용 — 외부 메시지 브로커(Redis, SQLite) 불필요.
 
-**Default pipeline: Manager → Developer + QA**
+#### 기본 파이프라인: Manager → Developer + QA
 
-| Agent | Model | Tools | Role |
+| 에이전트 | 모델 | 도구 | 역할 |
 |-------|-------|-------|------|
-| Manager | Opus | Read, Grep, Glob, Task | Decomposes tasks, delegates via `Task` tool, synthesizes results |
-| Developer | Sonnet | Read, Grep, Glob, Edit, Write, Bash | Implements code changes |
-| QA | Sonnet | Read, Grep, Glob, Bash | Reviews code, runs tests — **no write access** |
+| Manager | Opus | Read, Grep, Glob, Task | 태스크 분해, `Task` 도구로 위임, 결과 합성 |
+| Developer | Sonnet | Read, Grep, Glob, Edit, Write, Bash | 코드 변경 구현 |
+| QA | Sonnet | Read, Grep, Glob, Bash | 코드 검토, 테스트 실행 — **쓰기 권한 없음** |
 
-**Peer review loop:** Developer → QA validates → if failed, Manager routes feedback back to Developer (max 3 revision cycles).
+**동료 검토 루프:** Developer → QA 검증 → 실패 시 Manager가 Developer에게 피드백 라우팅 (최대 3회 수정 사이클).
 
-**SwarmConfig type:**
+**SwarmConfig 타입:**
 
 ```typescript
 interface SwarmConfig {
@@ -449,143 +451,143 @@ interface SwarmConfig {
 
 ---
 
-## 5. Data Flow
+## 5. 데이터 흐름
 
 ```
-User runs: claudebot run
+사용자 실행: claudebot run
 
   1. loadConfig()
-     └─ Read claudebot.config.json
-     └─ Merge CLI flags (override)
-     └─ Validate with Zod schema
+     └─ claudebot.config.json 읽기
+     └─ CLI 플래그 병합 (우선 적용)
+     └─ Zod 스키마로 검증
 
   2. parseTasks(config.tasksFile)
-     └─ Read markdown file line-by-line
-     └─ Match checkbox regex
-     └─ Extract inline tags
-     └─ Return Task[] (pending only)
+     └─ 마크다운 파일을 줄 단위로 읽기
+     └─ 체크박스 정규식 매칭
+     └─ 인라인 태그 추출
+     └─ Task[] 반환 (대기 중인 것만)
 
-  3. For each Task:
+  3. 각 Task에 대해:
      │
-     ├─ costTracker.isOverBudget() → true → mark skipped, continue
+     ├─ costTracker.isOverBudget() → true → 건너뜀으로 표시, 계속
      │
      ├─ executor.execute(task, config, logger)
-     │   ├─ [SDK] query(prompt, opts) → async generator
-     │   │   ├─ message: init → session_id
-     │   │   └─ message: result → cost, duration, is_error
+     │   ├─ [SDK] query(prompt, opts) → 비동기 제너레이터
+     │   │   ├─ 메시지: init → session_id
+     │   │   └─ 메시지: result → cost, duration, is_error
      │   │
-     │   └─ [CLI] spawn('claude', args) → stdout stream
-     │       ├─ line: init JSON → session_id
-     │       └─ line: result JSON → cost, is_error
+     │   └─ [CLI] spawn('claude', args) → stdout 스트림
+     │       ├─ 줄: init JSON → session_id
+     │       └─ 줄: result JSON → cost, is_error
      │
      ├─ writer.updateTaskInFile(task, result)
-     │   ├─ success → [ ] → [x]
-     │   └─ failure → [ ] → [!] + comment
+     │   ├─ 성공 → [ ] → [x]
+     │   └─ 실패 → [ ] → [!] + 주석
      │
      ├─ sessionManager.record(result)
-     │   └─ Append to sessions.json
+     │   └─ sessions.json에 추가
      │
      └─ costTracker.record(result.costUsd)
 
-  4. Return BotRunResult summary
+  4. BotRunResult 요약 반환
 ```
 
 ---
 
-## 6. Configuration Reference
+## 6. 설정 레퍼런스
 
-Full `claudebot.config.json` field reference:
+전체 `claudebot.config.json` 필드 레퍼런스:
 
-| Field | Type | Default | Description |
+| 필드 | 타입 | 기본값 | 설명 |
 |-------|------|---------|-------------|
-| `engine` | `"sdk" \| "cli"` | `"sdk"` | Execution engine selection |
-| `tasksFile` | string | `"docs/todo.md"` | Path to markdown task file |
-| `model` | string? | SDK default | Claude model ID |
-| `permissionMode` | string | `"acceptEdits"` | Claude tool permission mode |
-| `maxBudgetPerTaskUsd` | number? | — | Per-task USD limit |
-| `maxTotalBudgetUsd` | number? | — | Total run USD limit |
-| `taskTimeoutMs` | number | `600000` | Per-task timeout (10 min) |
-| `maxRetries` | number | `2` | Max retry attempts |
-| `stopOnFailure` | boolean | `false` | Halt queue on first failure |
-| `sessionStorePath` | string | `".claudebot/sessions.json"` | Session history file |
-| `logLevel` | string | `"info"` | Logging verbosity |
-| `watchIntervalMs` | number | `20000` | Watch mode poll interval (20 sec) |
-| `swarm` | object? | — | Multi-agent swarm config |
+| `engine` | `"sdk" \| "cli"` | `"sdk"` | 실행 엔진 선택 |
+| `tasksFile` | string | `"docs/todo.md"` | 마크다운 태스크 파일 경로 |
+| `model` | string? | SDK 기본값 | Claude 모델 ID |
+| `permissionMode` | string | `"acceptEdits"` | Claude 도구 권한 모드 |
+| `maxBudgetPerTaskUsd` | number? | — | 태스크당 USD 한도 |
+| `maxTotalBudgetUsd` | number? | — | 전체 실행 USD 한도 |
+| `taskTimeoutMs` | number | `600000` | 태스크당 타임아웃 (10분) |
+| `maxRetries` | number | `2` | 최대 재시도 횟수 |
+| `stopOnFailure` | boolean | `false` | 첫 번째 실패 시 큐 중단 |
+| `sessionStorePath` | string | `".claudebot/sessions.json"` | 세션 기록 파일 |
+| `logLevel` | string | `"info"` | 로깅 상세도 |
+| `watchIntervalMs` | number | `20000` | 와치 모드 폴링 간격 (20초) |
+| `swarm` | object? | — | 멀티 에이전트 스웜 설정 |
 
 ---
 
-## 7. Implementation Status
+## 7. 구현 현황
 
-| Feature | Status | Engine | Verified |
+| 기능 | 상태 | 엔진 | 검증 |
 |---------|--------|--------|---------|
-| Task queue parsing (checkboxes + tags) | ✅ Working | Both | 10 tasks |
-| SDK execution via `query()` | ✅ Working | SDK | 2 tasks, $0.11 |
-| CLI execution via `spawn('claude')` | ✅ Working | CLI | 8 tasks, $0.59 |
-| Session persistence (sessions.json) | ✅ Working | Both | 10 records |
-| Exact cost tracking | ✅ Working | SDK only | Yes |
-| Budget enforcement (per-task + global) | ✅ Working | Both | — |
-| Exponential backoff retry | ✅ Working | Both | — |
-| Per-task timeout (AbortController) | ✅ Working | Both | — |
-| Graceful SIGINT/SIGTERM shutdown | ✅ Working | Both | — |
-| Dry-run mode (parse, no execute) | ✅ Working | Both | — |
-| Watch mode (poll when queue empty) | ✅ Working | Both | — |
-| Zod config validation | ✅ Working | Both | — |
-| CLI `status` command | ✅ Working | Both | — |
-| Task file write-back [x] / [!] | ✅ Working | Both | — |
-| Inline tag parsing ([budget], [turns]) | ✅ Working | Both | — |
-| Multi-agent swarm (definition) | 🔧 Defined | SDK only | Not integrated |
-| Swarm execution integration | ❌ Not done | SDK only | — |
-| Token count analytics | 🔧 Placeholder | SDK | — |
-| Parallel task execution | ❌ Not planned | — | Sequential only |
+| 태스크 큐 파싱 (체크박스 + 태그) | ✅ 작동 중 | 모두 | 태스크 10개 |
+| `query()`를 통한 SDK 실행 | ✅ 작동 중 | SDK | 태스크 2개, $0.11 |
+| `spawn('claude')`를 통한 CLI 실행 | ✅ 작동 중 | CLI | 태스크 8개, $0.59 |
+| 세션 영속성 (sessions.json) | ✅ 작동 중 | 모두 | 레코드 10개 |
+| 정확한 비용 추적 | ✅ 작동 중 | SDK 전용 | 예 |
+| 예산 집행 (태스크당 + 전체) | ✅ 작동 중 | 모두 | — |
+| 지수 백오프 재시도 | ✅ 작동 중 | 모두 | — |
+| 태스크당 타임아웃 (AbortController) | ✅ 작동 중 | 모두 | — |
+| 정상 SIGINT/SIGTERM 종료 | ✅ 작동 중 | 모두 | — |
+| 드라이런 모드 (파싱, 실행 안 함) | ✅ 작동 중 | 모두 | — |
+| 와치 모드 (큐 비어 있을 때 폴링) | ✅ 작동 중 | 모두 | — |
+| Zod 설정 검증 | ✅ 작동 중 | 모두 | — |
+| CLI `status` 명령어 | ✅ 작동 중 | 모두 | — |
+| 태스크 파일 쓰기 복귀 [x] / [!] | ✅ 작동 중 | 모두 | — |
+| 인라인 태그 파싱 ([budget], [turns]) | ✅ 작동 중 | 모두 | — |
+| 멀티 에이전트 스웜 (정의) | 🔧 정의됨 | SDK 전용 | 미통합 |
+| 스웜 실행 통합 | ❌ 미완료 | SDK 전용 | — |
+| 토큰 수 분석 | 🔧 플레이스홀더 | SDK | — |
+| 병렬 태스크 실행 | ❌ 미계획 | — | 순차 실행만 |
 
 ---
 
-## 8. Known Limitations
+## 8. 알려진 한계
 
-1. **Sequential execution only** — Tasks run one-at-a-time. No parallel execution.
-2. **CLI executor: no cost tracking** — Returns `-1` for `costUsd`. Budget enforcement based on estimate.
-3. **Swarm mode not integrated** — `src/agent/swarm.ts` defines the agent config but `ClaudeBot.run()` does not yet activate swarm routing.
-4. **No resume across restarts** — Watch mode resets task state in memory on restart. Session history persists but in-progress tasks won't auto-resume.
-5. **Single tasks file** — All tasks must be in one markdown file. No multi-file queue support.
+1. **순차 실행만 가능** — 태스크는 하나씩 실행됩니다. 병렬 실행 없음.
+2. **CLI executor: 비용 추적 불가** — `costUsd`로 `-1`을 반환합니다. 예산 집행은 추정치 기반.
+3. **스웜 모드 미통합** — `src/agent/swarm.ts`에서 에이전트 설정을 정의하지만, `ClaudeBot.run()`은 아직 스웜 라우팅을 활성화하지 않습니다.
+4. **재시작 시 재개 불가** — 와치 모드는 재시작 시 메모리 내 태스크 상태를 초기화합니다. 세션 기록은 유지되지만, 진행 중인 태스크는 자동 재개되지 않습니다.
+5. **단일 태스크 파일** — 모든 태스크는 하나의 마크다운 파일에 있어야 합니다. 다중 파일 큐 미지원.
 
 ---
 
-## 9. File Structure
+## 9. 파일 구조
 
 ```
 claude-bot/
 ├── src/
-│   ├── index.ts              # CLI entry point (Commander)
-│   ├── bot.ts                # ClaudeBot orchestrator
-│   ├── config.ts             # Zod config loader
-│   ├── types.ts              # Core type definitions
+│   ├── index.ts              # CLI 진입점 (Commander)
+│   ├── bot.ts                # ClaudeBot 오케스트레이터
+│   ├── config.ts             # Zod 설정 로더
+│   ├── types.ts              # 핵심 타입 정의
 │   ├── logger/
-│   │   └── index.ts          # Pino logger factory
+│   │   └── index.ts          # Pino 로거 팩토리
 │   ├── engine/
-│   │   ├── types.ts          # IExecutor interface
-│   │   ├── factory.ts        # Engine factory function
-│   │   ├── sdk-executor.ts   # SDK engine (primary)
-│   │   └── cli-executor.ts   # CLI engine (fallback)
+│   │   ├── types.ts          # IExecutor 인터페이스
+│   │   ├── factory.ts        # 엔진 팩토리 함수
+│   │   ├── sdk-executor.ts   # SDK 엔진 (주요)
+│   │   └── cli-executor.ts   # CLI 엔진 (폴백)
 │   ├── task/
-│   │   ├── parser.ts         # Markdown task parser
-│   │   └── writer.ts         # Task file updater
+│   │   ├── parser.ts         # 마크다운 태스크 파서
+│   │   └── writer.ts         # 태스크 파일 업데이터
 │   ├── session/
-│   │   └── manager.ts        # Session persistence
+│   │   └── manager.ts        # 세션 영속성 관리
 │   ├── cost/
-│   │   └── tracker.ts        # Budget/cost tracking
+│   │   └── tracker.ts        # 예산/비용 추적
 │   ├── agent/
-│   │   └── swarm.ts          # Multi-agent swarm config
+│   │   └── swarm.ts          # 멀티 에이전트 스웜 설정
 │   └── utils/
-│       ├── abort.ts          # AbortController helper
-│       └── retry.ts          # Exponential backoff retry
+│       ├── abort.ts          # AbortController 헬퍼
+│       └── retry.ts          # 지수 백오프 재시도
 ├── docs/
-│   ├── PRD.md                # Product requirements
-│   ├── TechSpec.md           # This document
-│   └── todo.md               # Default task queue file
-├── tasks.md                  # Example task queue
-├── claudebot.config.json     # Project configuration
+│   ├── PRD.md                # 제품 요구사항
+│   ├── TechSpec.md           # 현재 문서
+│   └── todo.md               # 기본 태스크 큐 파일
+├── tasks.md                  # 예시 태스크 큐
+├── claudebot.config.json     # 프로젝트 설정
 ├── package.json
 ├── tsconfig.json
 └── .claudebot/
-    └── sessions.json         # Persistent session history
+    └── sessions.json         # 영속 세션 기록
 ```
