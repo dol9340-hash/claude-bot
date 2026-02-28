@@ -1,0 +1,57 @@
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import type { SessionRecord } from '@shared/types';
+
+interface CostPerTaskChartProps {
+  records: SessionRecord[];
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  completed: '#3fb950',
+  failed: '#f85149',
+  pending: '#58a6ff',
+  running: '#d29922',
+  skipped: '#6e7681',
+};
+
+export default function CostPerTaskChart({ records }: CostPerTaskChartProps) {
+  const data = records.map((r, i) => ({
+    name: `#${r.taskLine}`,
+    cost: r.costUsd,
+    status: r.status,
+    task: r.taskPrompt.slice(0, 25),
+    idx: i,
+  }));
+
+  return (
+    <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg p-4">
+      <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-3">
+        Cost per Task
+      </h3>
+      <ResponsiveContainer width="100%" height={250}>
+        <BarChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
+          <XAxis dataKey="name" tick={{ fill: '#8b949e', fontSize: 11 }} />
+          <YAxis tick={{ fill: '#8b949e', fontSize: 11 }} tickFormatter={(v: number) => `$${v}`} />
+          <Tooltip
+            contentStyle={{
+              background: '#21262d',
+              border: '1px solid #30363d',
+              borderRadius: '6px',
+              color: '#e6edf3',
+              fontSize: '12px',
+            }}
+            formatter={(value: any) => [`$${Number(value).toFixed(4)}`, 'Cost']}
+            labelFormatter={(_label: any, payload: any) =>
+              payload?.[0]?.payload?.task ?? ''
+            }
+          />
+          <Bar dataKey="cost" radius={[4, 4, 0, 0]}>
+            {data.map((entry) => (
+              <Cell key={entry.idx} fill={STATUS_COLORS[entry.status] ?? '#6e7681'} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
