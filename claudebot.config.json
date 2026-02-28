@@ -1,0 +1,12 @@
+{
+  "engine": "sdk",
+  "tasksFile": "docs/todo.md",
+  "model": "claude-sonnet-4-6",
+  "permissionMode": "acceptEdits",
+  "maxBudgetPerTaskUsd": 2.00,
+  "maxTotalBudgetUsd": 20.00,
+  "taskTimeoutMs": 600000,
+  "maxRetries": 2,
+  "stopOnFailure": false,
+  "logLevel": "info"
+}
