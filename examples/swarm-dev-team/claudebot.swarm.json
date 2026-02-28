@@ -1,0 +1,62 @@
+{
+  "engine": "sdk",
+  "permissionMode": "acceptEdits",
+  "maxTotalBudgetUsd": 50.00,
+  "watchIntervalMs": 15000,
+  "maxConcurrentBots": 5,
+  "costAlertThresholds": [0.7, 0.9],
+
+  "swarmGraph": {
+    "workspacePath": ".botspace",
+    "boardFile": "board.md",
+    "registryFile": "registry.json",
+    "stuckTaskTimeoutMs": 600000,
+
+    "entryBots": ["coordinator"],
+
+    "bots": {
+      "coordinator": {
+        "model": "claude-opus-4-6",
+        "systemPromptFile": "prompts/coordinator.md",
+        "watchesFiles": ["docs/tasks/*.md"],
+        "canContact": ["worker", "reviewer"],
+        "workspaceDir": "coordinator",
+        "maxBudgetPerTaskUsd": 5.00,
+        "maxTurnsPerTask": 30,
+        "terminatesOnEmpty": true,
+        "allowedTools": ["Read", "Write", "Edit", "Grep", "Glob"]
+      },
+      "worker": {
+        "model": "claude-sonnet-4-6",
+        "systemPromptFile": "prompts/worker.md",
+        "watchesFiles": [],
+        "canContact": ["coordinator", "reviewer"],
+        "workspaceDir": "worker",
+        "maxBudgetPerTaskUsd": 10.00,
+        "maxTurnsPerTask": 60,
+        "terminatesOnEmpty": false,
+        "allowedTools": ["Read", "Write", "Edit", "Grep", "Glob", "Bash"]
+      },
+      "reviewer": {
+        "model": "claude-sonnet-4-6",
+        "systemPromptFile": "prompts/reviewer.md",
+        "watchesFiles": [],
+        "canContact": ["coordinator", "worker"],
+        "workspaceDir": "reviewer",
+        "maxBudgetPerTaskUsd": 3.00,
+        "maxTurnsPerTask": 20,
+        "terminatesOnEmpty": false,
+        "allowedTools": ["Read", "Grep", "Glob", "Bash"]
+      }
+    },
+
+    "message": {
+      "routingStrategy": "explicit",
+      "format": "envelope",
+      "maxRoutingCycles": 3
+    },
+    "termination": {
+      "gracePeriodMs": 30000
+    }
+  }
+}

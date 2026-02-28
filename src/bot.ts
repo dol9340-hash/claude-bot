@@ -50,6 +50,7 @@ export class ClaudeBot {
   async run(): Promise<BotRunResult> {
     const startTime = Date.now();
     const allResults: TaskResult[] = [];
+    let skipped = 0;
     const watchInterval = this.config.watchIntervalMs;
 
     this.logger.info({
@@ -86,8 +87,16 @@ export class ClaudeBot {
       this.logger.info({ taskCount: tasks.length }, 'Pending tasks found');
 
       for (const task of tasks) {
-        if (this.aborted) break;
-        if (this.costTracker.isOverBudget()) break;
+        if (this.aborted) {
+          skipped++;
+          continue;
+        }
+        if (this.costTracker.isOverBudget()) {
+          skipped++;
+          task.status = 'skipped';
+          this.logger.info({ taskLine: task.line }, 'Task skipped (budget exceeded)');
+          continue;
+        }
 
         let result: TaskResult;
         try {
@@ -145,6 +154,7 @@ export class ClaudeBot {
       totalTasks: allResults.length,
       completed,
       failed,
+      skipped,
       totalCost: `$${summary.totalCostUsd.toFixed(4)}`,
       totalDuration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
     }, 'ClaudeBot stopped');
@@ -153,7 +163,7 @@ export class ClaudeBot {
       totalTasks: allResults.length,
       completed,
       failed,
-      skipped: 0,
+      skipped,
       totalCostUsd: summary.totalCostUsd,
       totalDurationMs: Date.now() - startTime,
       results: allResults,
