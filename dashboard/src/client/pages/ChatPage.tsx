@@ -29,10 +29,8 @@ export default function ChatPage() {
         break;
       case 'workflow':
         setWorkflow(msg.state);
-        // Extract pending decisions from workflow state (critical for reconnect)
         if (msg.state.decisions) {
-          const pending = msg.state.decisions.filter((d) => d.status === 'pending');
-          setPendingDecisions(pending);
+          setPendingDecisions(msg.state.decisions.filter((d) => d.status === 'pending'));
         }
         break;
       case 'bots':
@@ -40,10 +38,10 @@ export default function ChatPage() {
         break;
       case 'decision':
         setPendingDecisions((prev) => {
-          const idx = prev.findIndex((d) => d.id === msg.card.id);
           if (msg.card.status !== 'pending') {
             return prev.filter((d) => d.id !== msg.card.id);
           }
+          const idx = prev.findIndex((d) => d.id === msg.card.id);
           if (idx >= 0) {
             const updated = [...prev];
             updated[idx] = msg.card;
@@ -57,10 +55,10 @@ export default function ChatPage() {
 
   const { connected, send } = useWebSocket({ onMessage: handleMessage });
 
-  // Refresh state from REST (used after REST fallback actions)
+  // Refresh full state from REST
   const refreshFromRest = useCallback(async () => {
     try {
-      await new Promise((r) => setTimeout(r, 500)); // wait for engine to process
+      await new Promise((r) => setTimeout(r, 600));
       const [msgRes, wfRes] = await Promise.all([
         fetch('/api/chat/messages'),
         fetch('/api/chat/workflow'),
@@ -74,9 +72,17 @@ export default function ChatPage() {
     } catch { /* swallow */ }
   }, []);
 
-  // Send message — WS primary, REST fallback
+  // Send message — optimistic update FIRST, then WS/REST
   const handleSend = useCallback(
     async (content: string) => {
+      // 1) Optimistic: show user's message immediately
+      const tempId = Math.random().toString(36).slice(2, 10);
+      setMessages((prev) => [
+        ...prev,
+        { id: tempId, role: 'user', content, channel: 'main', timestamp: new Date().toISOString() },
+      ]);
+
+      // 2) Send to server
       if (connected) {
         send({ type: 'chat', content });
       } else {
@@ -112,10 +118,10 @@ export default function ChatPage() {
     [connected, send, refreshFromRest],
   );
 
-  // REST: load initial messages when component mounts (in case WS is slow)
+  // Load initial data on mount via REST
   useEffect(() => {
     let cancelled = false;
-    async function loadInitial() {
+    (async () => {
       try {
         const [msgRes, wfRes, decRes] = await Promise.all([
           fetch('/api/chat/messages'),
@@ -123,10 +129,7 @@ export default function ChatPage() {
           fetch('/api/chat/decisions'),
         ]);
         if (cancelled) return;
-        if (msgRes.ok) {
-          const msgs: ChatMessageDTO[] = await msgRes.json();
-          setMessages(msgs);
-        }
+        if (msgRes.ok) setMessages(await msgRes.json());
         if (wfRes.ok) {
           const wf: WorkflowStateDTO = await wfRes.json();
           setWorkflow(wf);
@@ -136,11 +139,10 @@ export default function ChatPage() {
         }
         if (decRes.ok) {
           const decs: DecisionCardDTO[] = await decRes.json();
-          setPendingDecisions(decs);
+          if (decs.length > 0) setPendingDecisions(decs);
         }
-      } catch { /* swallow — WS will deliver data */ }
-    }
-    loadInitial();
+      } catch { /* WS will deliver */ }
+    })();
     return () => { cancelled = true; };
   }, []);
 
@@ -157,11 +159,9 @@ export default function ChatPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Workflow progress bar + reset */}
       <WorkflowBar workflow={workflow} connected={connected} onReset={handleReset} />
 
       <div className="flex-1 flex gap-4 min-h-0 mt-4">
-        {/* Main chat area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Pending decisions */}
           {pendingDecisions.length > 0 && (
@@ -172,16 +172,15 @@ export default function ChatPage() {
             </div>
           )}
 
-          {/* Messages */}
+          {/* Messages timeline */}
           <div className="flex-1 min-h-0">
             <ChatTimeline messages={messages} />
           </div>
 
-          {/* Input — always enabled (REST fallback if WS disconnected) */}
+          {/* Input — always enabled */}
           <ChatInput onSend={handleSend} />
         </div>
 
-        {/* Bot status sidebar */}
         {bots.length > 0 && (
           <div className="w-64 shrink-0">
             <BotStatusPanel bots={bots} />

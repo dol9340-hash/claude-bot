@@ -83,14 +83,17 @@ async function main() {
   await app.register(chatRoute, { prefix: '/api' });
   await app.register(reportRoute, { prefix: '/api' });
 
-  // Production: serve static client files
-  if (process.env.NODE_ENV === 'production') {
-    const clientDir = path.join(__dirname, '..', 'client');
-    await app.register(fastifyStatic, { root: clientDir });
-    app.setNotFoundHandler((_req, reply) => {
-      reply.sendFile('index.html');
-    });
-  }
+  // Serve static client files if built (works in both dev and prod)
+  const clientDir = path.join(__dirname, '..', 'client');
+  try {
+    const { existsSync } = await import('node:fs');
+    if (existsSync(path.join(clientDir, 'index.html'))) {
+      await app.register(fastifyStatic, { root: clientDir });
+      app.setNotFoundHandler((_req, reply) => {
+        reply.sendFile('index.html');
+      });
+    }
+  } catch { /* no static files available */ }
 
   // Start watcher and chat manager if project path is set
   if (state.projectPath) {
