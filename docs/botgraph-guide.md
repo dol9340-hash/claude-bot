@@ -1,7 +1,9 @@
 # BotGraph 실전 사용 가이드
 
 > ClaudeBot BotGraph (Section 10) — 멀티봇 협업 파이프라인 완전 가이드
-> 버전: 2026-02-28 | 상태: Phase 2 (계획됨)
+> 버전: 2026-03-02 | 상태: Phase 2 구현 완료 ✅
+>
+> `claudebot swarm --config claudebot.swarm.json` 명령어로 멀티봇 스웜 실행 가능.
 
 ---
 

@@ -1031,7 +1031,7 @@ async function safeRun(prompt: string) {
 
 ## 7. 실전 구현 레퍼런스 (ClaudeBot SdkExecutor)
 
-이 가이드의 패턴들은 [ClaudeBot 프로젝트](https://github.com/your-repo/claude-bot)의 실제 구현에서 검증되었습니다.
+이 가이드의 패턴들은 ClaudeBot 프로젝트의 실제 구현에서 검증되었습니다.
 
 **실제 검증 기록:**
 - SDK 엔진: 2개 태스크, $0.1094, 100% 성공률

@@ -389,7 +389,10 @@ interface CostSummary {
   totalCostUsd: number;
   taskCount: number;
   averageCostPerTask: number;
-  maxBudgetUsd: number | undefined;
+  costByModel: Record<string, number>;
+  costByBot: Record<string, number>;
+  totalInputTokens: number;
+  totalOutputTokens: number;
 }
 ```
 
