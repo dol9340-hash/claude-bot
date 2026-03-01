@@ -1,13 +1,15 @@
 import path from 'node:path';
 import type { Logger } from 'pino';
 import { ClaudeBot } from '../bot.js';
-import type { SwarmFileConfig, BotRuntimeInfo, BotRuntimeStatus } from './types.js';
+import type { SwarmFileConfig, BotDefinition, BotRuntimeInfo, BotRuntimeStatus } from './types.js';
+import { BotDefinitionSchema } from './types.js';
 import { loadSwarmConfig } from './config-loader.js';
 import { buildBotConfig, buildBotSystemContext } from './bot-factory.js';
 import { bootstrapWorkspace } from './workspace.js';
 import { BulletinBoard } from './board.js';
 import { InboxManager } from './inbox.js';
 import { RegistryManager } from './registry.js';
+import { getEventBus } from '../events/index.js';
 
 interface BotInstance {
   name: string;
@@ -46,6 +48,7 @@ export class SwarmOrchestrator {
   private projectRoot: string;
   private logger: Logger;
   private instances: Map<string, BotInstance> = new Map();
+  private dynamicPromises: Array<Promise<void>> = [];
   private board: BulletinBoard;
   private inbox: InboxManager;
   private registry: RegistryManager;
@@ -108,33 +111,17 @@ export class SwarmOrchestrator {
       `Starting ${Object.keys(this.config.swarmGraph.bots).length} bots.`,
     );
 
+    const bus = getEventBus();
+
     // 3. Create ClaudeBot instances for each bot
     for (const [name, def] of Object.entries(this.config.swarmGraph.bots)) {
-      const botConfig = buildBotConfig(name, def, this.config, this.projectRoot);
-
-      // Append BotGraph context to system prompt
-      const contextPrompt = buildBotSystemContext(name, def, this.config);
-      botConfig.systemPromptPrefix = (botConfig.systemPromptPrefix ?? '') + contextPrompt;
-
-      const bot = new ClaudeBot(botConfig, this.logger);
-      const now = new Date().toISOString();
-
-      this.instances.set(name, {
-        name,
-        bot,
-        status: 'idle',
-        costUsd: 0,
-        tasksCompleted: 0,
-        tasksFailed: 0,
-        startedAt: now,
-        lastActivityAt: now,
-      });
-
-      this.logger.info(
-        { botName: name, model: def.model, engine: botConfig.engine },
-        'Bot instance created',
-      );
+      this.createBotInstance(name, def);
     }
+
+    bus.emit('swarm:started', {
+      botCount: this.instances.size,
+      timestamp: new Date().toISOString(),
+    });
 
     // 4. Run all bot instances in parallel
     this.logger.info(
@@ -155,6 +142,11 @@ export class SwarmOrchestrator {
 
     // Wait for all bots to finish (or be aborted)
     await Promise.allSettled(botPromises);
+
+    // Also wait for dynamically added bots
+    if (this.dynamicPromises.length > 0) {
+      await Promise.allSettled(this.dynamicPromises);
+    }
 
     // 6. Collect results
     const totalDurationMs = Date.now() - startTime;
@@ -199,10 +191,118 @@ export class SwarmOrchestrator {
     };
   }
 
+  /** Create a bot instance from a definition and add to instances map. */
+  private createBotInstance(name: string, def: BotDefinition): BotInstance {
+    const botConfig = buildBotConfig(name, def, this.config, this.projectRoot);
+    const contextPrompt = buildBotSystemContext(name, def, this.config);
+    botConfig.systemPromptPrefix = (botConfig.systemPromptPrefix ?? '') + contextPrompt;
+
+    const bot = new ClaudeBot(botConfig, this.logger);
+    const now = new Date().toISOString();
+
+    const instance: BotInstance = {
+      name,
+      bot,
+      status: 'idle',
+      costUsd: 0,
+      tasksCompleted: 0,
+      tasksFailed: 0,
+      startedAt: now,
+      lastActivityAt: now,
+    };
+
+    this.instances.set(name, instance);
+
+    this.logger.info(
+      { botName: name, model: def.model, engine: botConfig.engine },
+      'Bot instance created',
+    );
+
+    getEventBus().emit('bot:created', {
+      name,
+      model: def.model,
+      timestamp: now,
+    });
+
+    return instance;
+  }
+
+  /**
+   * Dynamically add a bot at runtime (Phase 4 Orchestrator API).
+   * Validates the definition, registers inbox, creates and starts the bot.
+   */
+  addBot(name: string, rawDef: Record<string, unknown>): BotInstance {
+    if (this.instances.has(name)) {
+      throw new Error(`Bot "${name}" already exists`);
+    }
+
+    if (this.instances.size >= this.config.maxConcurrentBots) {
+      throw new Error(`Max concurrent bots (${this.config.maxConcurrentBots}) reached`);
+    }
+
+    // Validate definition
+    const def = BotDefinitionSchema.parse(rawDef);
+
+    // Validate canContact targets exist
+    for (const target of def.canContact) {
+      if (!(target in this.config.swarmGraph.bots) && !this.instances.has(target)) {
+        throw new Error(`canContact target "${target}" does not exist`);
+      }
+    }
+
+    // Register in config so inbox and other bots can reference it
+    this.config.swarmGraph.bots[name] = def;
+
+    // Register inbox
+    this.inbox.registerBot(name);
+
+    // Create and start the bot
+    const instance = this.createBotInstance(name, def);
+    const promise = this.runBot(name, instance);
+    this.dynamicPromises.push(promise);
+
+    this.board.post('orchestrator', 'BOT_ADDED', `Dynamic bot "${name}" created and started.`);
+
+    return instance;
+  }
+
+  /**
+   * Remove a running bot at runtime (Phase 4 Orchestrator API).
+   */
+  removeBot(name: string): void {
+    const instance = this.instances.get(name);
+    if (!instance) {
+      throw new Error(`Bot "${name}" not found`);
+    }
+
+    if (instance.status === 'working' || instance.status === 'waiting') {
+      instance.bot.abort();
+    }
+
+    instance.status = 'stopped';
+    instance.lastActivityAt = new Date().toISOString();
+
+    this.inbox.unregisterBot(name);
+    delete this.config.swarmGraph.bots[name];
+
+    this.logger.info({ botName: name }, 'Bot removed');
+    this.board.post('orchestrator', 'BOT_REMOVED', `Bot "${name}" removed.`);
+
+    getEventBus().emit('bot:completed', {
+      name,
+      completed: instance.tasksCompleted,
+      failed: instance.tasksFailed,
+      costUsd: instance.costUsd,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   /** Run a single bot instance and track its results. */
   private async runBot(name: string, instance: BotInstance): Promise<void> {
     instance.status = 'working';
     instance.lastActivityAt = new Date().toISOString();
+
+    const bus = getEventBus();
 
     try {
       const result = await instance.bot.run();
@@ -219,6 +319,24 @@ export class SwarmOrchestrator {
         failed: result.failed,
         cost: `$${result.totalCostUsd.toFixed(4)}`,
       }, 'Bot finished');
+
+      bus.emit('bot:completed', {
+        name,
+        completed: result.completed,
+        failed: result.failed,
+        costUsd: result.totalCostUsd,
+        timestamp: instance.lastActivityAt,
+      });
+
+      bus.emit('cost:update', {
+        botName: name,
+        taskCostUsd: result.totalCostUsd,
+        totalCostUsd: this.getTotalCost(),
+        budgetPercent: this.config.maxTotalBudgetUsd
+          ? (this.getTotalCost() / this.config.maxTotalBudgetUsd) * 100
+          : null,
+        timestamp: instance.lastActivityAt,
+      });
     } catch (err) {
       instance.status = 'error';
       instance.lastActivityAt = new Date().toISOString();
@@ -275,6 +393,15 @@ export class SwarmOrchestrator {
         this.logger.info({ botName: name }, 'Bot aborted');
       }
     }
+  }
+
+  /** Get total cost across all bots. */
+  getTotalCost(): number {
+    let total = 0;
+    for (const instance of this.instances.values()) {
+      total += instance.costUsd;
+    }
+    return total;
   }
 
   /** Get runtime info for all bots (for status display). */

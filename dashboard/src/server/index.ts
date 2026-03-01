@@ -3,6 +3,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
+import websocket from '@fastify/websocket';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sessionsRoute } from './routes/sessions.js';
@@ -11,7 +12,10 @@ import { configRoute } from './routes/config.js';
 import { summaryRoute } from './routes/summary.js';
 import { projectRoute } from './routes/project.js';
 import { eventsRoute } from './routes/events.js';
+import { chatRoute } from './routes/chat.js';
+import { reportRoute } from './routes/report.js';
 import { Watcher } from './services/watcher.js';
+import { ChatManager } from './services/chat-manager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,6 +45,7 @@ function parseArgs(): { project?: string; port: number; open: boolean } {
 export interface AppState {
   projectPath: string | null;
   watcher: Watcher;
+  chatManager: ChatManager;
 }
 
 async function main() {
@@ -49,9 +54,11 @@ async function main() {
   const app = Fastify({ logger: true });
 
   const watcher = new Watcher();
+  const chatManager = new ChatManager();
   const state: AppState = {
     projectPath: project ?? null,
     watcher,
+    chatManager,
   };
 
   // Decorate fastify with app state
@@ -62,6 +69,9 @@ async function main() {
     await app.register(cors, { origin: true });
   }
 
+  // WebSocket support (must register before routes that use it)
+  await app.register(websocket);
+
   // Register API routes
   await app.register(sessionsRoute, { prefix: '/api' });
   await app.register(tasksRoute, { prefix: '/api' });
@@ -69,6 +79,8 @@ async function main() {
   await app.register(summaryRoute, { prefix: '/api' });
   await app.register(projectRoute, { prefix: '/api' });
   await app.register(eventsRoute, { prefix: '/api' });
+  await app.register(chatRoute, { prefix: '/api' });
+  await app.register(reportRoute, { prefix: '/api' });
 
   // Production: serve static client files
   if (process.env.NODE_ENV === 'production') {
@@ -79,9 +91,10 @@ async function main() {
     });
   }
 
-  // Start watcher if project path is set
+  // Start watcher and chat manager if project path is set
   if (state.projectPath) {
     watcher.start(state.projectPath);
+    chatManager.setProjectPath(state.projectPath);
   }
 
   await app.listen({ port, host: 'localhost' });

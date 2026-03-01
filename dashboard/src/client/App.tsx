@@ -5,6 +5,7 @@ import SessionsPage from './pages/SessionsPage';
 import TasksPage from './pages/TasksPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ConfigPage from './pages/ConfigPage';
+import ChatPage from './pages/ChatPage';
 import ProjectSelectPage from './pages/ProjectSelectPage';
 import { useProject } from './hooks/useProject';
 
@@ -23,6 +24,7 @@ export default function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
