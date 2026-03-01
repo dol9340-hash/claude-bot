@@ -924,14 +924,14 @@ ClaudeBot 인스턴스 생성
 | **1** | 단일 봇 순차 작업 큐 (`src/` 16개 파일) | — | ✅ 완료 |
 | **2** | BotGraph 전체 (`src/swarm/` 9개 파일) | Phase 1 | ✅ 완료 |
 | **3 v1** | Dashboard 웹앱 (`dashboard/` 47개 파일) | Phase 1 | ✅ 완료 |
-| **3.2** | EventBus + TUI Dashboard | Phase 2 | 계획 |
-| **3.3** | 비용 모니터링 패널 | Phase 3.2 | 계획 |
-| **4.1** | Orchestrator 봇 타입 + `addBot()` API | Phase 2 | 계획 |
-| **4.2** | 4-Step Workflow (온보딩 → 미리보기 → 제안 → 실행) | Phase 4.1 | 계획 |
+| **3.2** | EventBus (`src/events/`) | Phase 2 | ✅ 완료 |
+| **3.3** | 비용 모니터링 패널 (Dashboard Analytics) | Phase 3.2 | ✅ 완료 |
+| **4.1** | Orchestrator 봇 타입 + `addBot()`/`removeBot()` API | Phase 2 | ✅ 완료 |
+| **4.2** | 4-Step Workflow (온보딩 → 미리보기 → 제안 → 실행) | Phase 4.1 | ✅ 완료 |
 | **4.3** | PoC 자동화 + 도메인 이탈 감지 | Phase 4.2 | 계획 |
-| **5.1** | Web Dashboard v2 (WebSocket 확장) | Phase 3.1 | 계획 |
-| **5.2** | 대화형 인터페이스 (사용자-Orchestrator) | Phase 5.1 | 계획 |
-| **5.3** | HTML 결과 보고서 생성기 | Phase 4.2 | 계획 |
+| **5.1** | Web Dashboard v2 (WebSocket + ChatManager) | Phase 3.1 | ✅ 완료 |
+| **5.2** | 대화형 인터페이스 (WorkflowEngine + Chat UI) | Phase 5.1 | ✅ 완료 |
+| **5.3** | HTML 결과 보고서 생성기 (`src/report/`, `/api/report`) | Phase 4.2 | ✅ 완료 |
 
 ---
 
