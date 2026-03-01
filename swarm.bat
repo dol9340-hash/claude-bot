@@ -3,12 +3,6 @@ setlocal
 
 cd /d "%~dp0"
 
-if not defined ANTHROPIC_API_KEY (
-    echo [ERROR] ANTHROPIC_API_KEY is not set.
-    echo   set ANTHROPIC_API_KEY=sk-ant-...
-    exit /b 1
-)
-
 if not exist "node_modules" (
     echo [SETUP] npm install ...
     call npm install || exit /b 1
