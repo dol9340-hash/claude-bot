@@ -558,7 +558,15 @@ interface SwarmConfig {
 | RegistryManager (작업 상태 머신, 파일 락) | ✅ 작동 중 | 모두 | — |
 | SwarmOrchestrator (N봇 병렬 실행) | ✅ 작동 중 | 모두 | — |
 | `claudebot status --swarm` | ✅ 작동 중 | 모두 | 봇별 비용 집계 |
+| EventBus (타입드 이벤트 시스템) | ✅ 작동 중 | 모두 | `src/events/` |
+| SwarmOrchestrator `addBot()`/`removeBot()` API | ✅ 작동 중 | 모두 | 동적 봇 생성/제거 |
+| WorkflowManager (4-Step 상태 머신) | ✅ 작동 중 | 모두 | `src/orchestrator/` |
+| Dashboard v2 WebSocket + ChatManager | ✅ 작동 중 | 모두 | `@fastify/websocket` |
+| 대화형 인터페이스 (WorkflowEngine) | ✅ 작동 중 | 모두 | 4-Step 워크플로우 UI |
+| Decision Card (승인/수정/거부) | ✅ 작동 중 | 모두 | Preview + Proposal |
+| HTML 결과 보고서 생성기 | ✅ 작동 중 | 모두 | `src/report/`, `/api/report` |
 | 토큰 수 분석 | 🔧 플레이스홀더 | SDK | — |
+| PoC 자동화 + 도메인 이탈 감지 | ❌ 미구현 | — | Phase 4.3 |
 | 병렬 태스크 실행 (단일봇 내) | ❌ 미계획 | — | 순차 실행만 |
 
 ---
@@ -603,14 +611,73 @@ claude-bot/
 │   │   ├── types.ts          # Zod 스키마 (BotDefinition, SwarmGraphConfig 등)
 │   │   ├── config-loader.ts  # claudebot.swarm.json 로더 + 유효성 검사
 │   │   ├── bot-factory.ts    # BotDefinition → ClaudeBotConfig 파생
-│   │   ├── orchestrator.ts   # SwarmOrchestrator (N봇 병렬 실행)
+│   │   ├── orchestrator.ts   # SwarmOrchestrator (N봇 병렬, addBot/removeBot)
 │   │   ├── inbox.ts          # InboxManager (봇별 inbox, canContact 강제)
 │   │   ├── board.ts          # BulletinBoard (append-only 공유 로그)
 │   │   ├── registry.ts       # RegistryManager (작업 상태 머신, 파일 락)
 │   │   └── workspace.ts      # bootstrapWorkspace() (디렉토리 자동 생성)
+│   ├── events/               # Phase 4: 타입드 이벤트 시스템
+│   │   ├── index.ts          # Barrel export
+│   │   └── event-bus.ts      # SwarmEventBus (싱글톤, 타입 안전 이벤트)
+│   ├── orchestrator/         # Phase 4: 오케스트레이터 API
+│   │   ├── index.ts          # Barrel export
+│   │   ├── types.ts          # BotProposal, OutputPreview, DecisionCard 등
+│   │   └── workflow.ts       # WorkflowManager (4-Step 상태 머신)
+│   ├── report/               # Phase 4: HTML 결과 보고서
+│   │   ├── index.ts          # Barrel export (saveReport)
+│   │   └── generator.ts      # generateHtmlReport() (독립 HTML)
 │   └── utils/
 │       ├── abort.ts          # AbortController 헬퍼
 │       └── retry.ts          # 지수 백오프 재시도
+├── dashboard/                # Phase 3/5: 웹 대시보드
+│   ├── src/
+│   │   ├── shared/
+│   │   │   └── api-types.ts  # 공유 DTO 타입 (Chat, Workflow, Bot 등)
+│   │   ├── server/
+│   │   │   ├── index.ts      # Fastify 서버 진입점
+│   │   │   ├── services/
+│   │   │   │   ├── chat-manager.ts     # WebSocket + 채팅/워크플로우 상태 관리
+│   │   │   │   ├── workflow-engine.ts  # 4-Step 워크플로우 엔진 (핵심)
+│   │   │   │   ├── file-reader.ts      # 프로젝트 파일 읽기
+│   │   │   │   ├── task-parser.ts      # 태스크 파서
+│   │   │   │   └── watcher.ts          # 파일 시스템 감시
+│   │   │   └── routes/
+│   │   │       ├── chat.ts       # WebSocket + REST 채팅 라우트
+│   │   │       ├── project.ts    # 프로젝트 경로 관리
+│   │   │       ├── report.ts     # HTML 보고서 생성
+│   │   │       ├── sessions.ts   # 세션 조회
+│   │   │       ├── tasks.ts      # 태스크 조회
+│   │   │       ├── config.ts     # 설정 조회
+│   │   │       ├── events.ts     # SSE 이벤트 스트림
+│   │   │       └── summary.ts    # 요약 통계
+│   │   └── client/
+│   │       ├── App.tsx           # React 라우터 + 레이아웃
+│   │       ├── main.tsx          # 진입점 (ProjectProvider 래핑)
+│   │       ├── hooks/
+│   │       │   ├── useProject.tsx   # ProjectContext (전역 상태)
+│   │       │   ├── useWebSocket.ts  # WebSocket + 자동 재연결
+│   │       │   ├── useApi.ts        # REST API 훅
+│   │       │   └── useSSE.ts        # SSE 훅
+│   │       ├── pages/
+│   │       │   ├── ChatPage.tsx          # 대화형 인터페이스 (Phase 5)
+│   │       │   ├── DashboardPage.tsx     # 메인 대시보드
+│   │       │   ├── SessionsPage.tsx      # 세션 목록
+│   │       │   ├── TasksPage.tsx         # 태스크 뷰
+│   │       │   ├── ConfigPage.tsx        # 설정 뷰
+│   │       │   ├── AnalyticsPage.tsx     # 분석 뷰
+│   │       │   └── ProjectSelectPage.tsx # 프로젝트 선택
+│   │       └── components/
+│   │           ├── layout/
+│   │           │   ├── Layout.tsx    # 사이드바 + 메인 레이아웃
+│   │           │   └── Sidebar.tsx   # 네비게이션
+│   │           └── chat/             # Phase 5 채팅 컴포넌트
+│   │               ├── ChatTimeline.tsx   # 메시지 타임라인
+│   │               ├── ChatInput.tsx      # 입력창 (Shift+Enter)
+│   │               ├── WorkflowBar.tsx    # 5단계 진행 표시
+│   │               ├── DecisionCard.tsx   # 승인/수정/거부 UI
+│   │               └── BotStatusPanel.tsx # 봇 상태 패널
+│   ├── vite.config.ts        # Vite + WebSocket 프록시
+│   └── package.json
 ├── examples/
 │   └── swarm-dev-team/       # 소프트웨어 개발팀 예시
 │       ├── claudebot.swarm.json
@@ -618,16 +685,19 @@ claude-bot/
 ├── docs/
 │   ├── PRD.md                # 제품 요구사항
 │   ├── TechSpec.md           # 현재 문서
-│   ├── Adv.md                # Phase 3~5 개선 로드맵
 │   ├── task-adv.md           # Adv 구현 계획서
 │   ├── botgraph-guide.md     # BotGraph 사용 가이드
 │   ├── claude-agent-sdk-guide.md  # Agent SDK 가이드
+│   ├── dashboard-plan.md     # Dashboard 설계 계획
 │   └── todo.md               # 기본 태스크 큐 파일
 ├── tasks.md                  # 예시 태스크 큐
 ├── claudebot.config.json     # 프로젝트 설정 (단일봇)
 ├── claudebot.swarm.json      # 스웜 설정 (멀티봇, 선택)
+├── build.bat                 # 빌드 + 실행 배치 파일
+├── run.bat / swarm.bat / status.bat / dashboard.bat  # 실행 스크립트
 ├── package.json
 ├── tsconfig.json
 └── .claudebot/
-    └── sessions.json         # 영속 세션 기록
+    ├── sessions.json         # 영속 세션 기록
+    └── chat.json             # 대시보드 채팅 상태 (자동 생성)
 ```
