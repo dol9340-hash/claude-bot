@@ -204,6 +204,12 @@ export class ChatManager {
     return this.store.workflow.decisions.filter((d) => d.status === 'pending');
   }
 
+  // ─── Bot Status ─────────────────────────────────────────────────────
+
+  broadcastBots(bots: import('../../shared/api-types.js').BotStatusDTO[]): void {
+    this.broadcast({ type: 'bots', bots });
+  }
+
   // ─── Reset ────────────────────────────────────────────────────────────
 
   reset(): void {

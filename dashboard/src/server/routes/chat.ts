@@ -1,7 +1,17 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { WSClientMessage } from '../../shared/api-types.js';
+import { WorkflowEngine } from '../services/workflow-engine.js';
 
 export const chatRoute: FastifyPluginAsync = async (app) => {
+  // Create workflow engine and wire to ChatManager
+  const engine = new WorkflowEngine(app.appState.chatManager);
+  if (app.appState.projectPath) {
+    engine.setProjectPath(app.appState.projectPath);
+  }
+
+  // Expose engine on appState for project path updates
+  app.appState.workflowEngine = engine;
+
   // REST: get chat history
   app.get('/chat/messages', async (_req, reply) => {
     const { chatManager } = app.appState;
@@ -21,7 +31,7 @@ export const chatRoute: FastifyPluginAsync = async (app) => {
     return reply.send(chatManager.getPendingDecisions());
   });
 
-  // REST: post a user message
+  // REST: post a user message → triggers workflow engine
   app.post<{ Body: { content: string } }>('/chat/send', async (req, reply) => {
     const { chatManager } = app.appState;
     const { content } = req.body;
@@ -32,22 +42,13 @@ export const chatRoute: FastifyPluginAsync = async (app) => {
 
     const msg = chatManager.addMessage('user', content);
 
-    // Auto-reply from orchestrator (placeholder — in production, this triggers the Orchestrator bot)
-    setTimeout(() => {
-      const workflow = chatManager.getWorkflow();
-      if (workflow.step === 'idle') {
-        chatManager.setTopic(content);
-        chatManager.setStep('onboarding');
-        chatManager.addMessage('orchestrator', `Starting onboarding for: "${content}"\n\nI'll analyze the project goals and prepare a plan.`);
-      } else {
-        chatManager.addMessage('orchestrator', `Received: "${content}". Processing...`);
-      }
-    }, 500);
+    // Workflow engine processes the message asynchronously
+    setTimeout(() => engine.handleUserMessage(content), 50);
 
     return reply.send(msg);
   });
 
-  // REST: resolve a decision
+  // REST: resolve a decision → triggers workflow progression
   app.post<{ Body: { decisionId: string; status: 'approved' | 'rejected' | 'modified'; response?: string } }>(
     '/chat/decision',
     async (req, reply) => {
@@ -62,6 +63,9 @@ export const chatRoute: FastifyPluginAsync = async (app) => {
       if (!card) {
         return reply.code(404).send({ error: 'Decision not found or already resolved' });
       }
+
+      // Trigger workflow engine to handle the decision result
+      setTimeout(() => engine.handleDecisionResolved(card), 50);
 
       return reply.send(card);
     },
@@ -86,8 +90,12 @@ export const chatRoute: FastifyPluginAsync = async (app) => {
 
         if (msg.type === 'chat') {
           chatManager.addMessage('user', msg.content);
+          setTimeout(() => engine.handleUserMessage(msg.content), 50);
         } else if (msg.type === 'decision') {
-          chatManager.resolveDecision(msg.decisionId, msg.status, msg.response);
+          const card = chatManager.resolveDecision(msg.decisionId, msg.status, msg.response);
+          if (card) {
+            setTimeout(() => engine.handleDecisionResolved(card), 50);
+          }
         }
       } catch {
         socket.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));

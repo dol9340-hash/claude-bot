@@ -46,6 +46,7 @@ export interface AppState {
   projectPath: string | null;
   watcher: Watcher;
   chatManager: ChatManager;
+  workflowEngine?: import('./services/workflow-engine.js').WorkflowEngine;
 }
 
 async function main() {
