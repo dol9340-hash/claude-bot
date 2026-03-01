@@ -31,6 +31,17 @@ export const BotDefinitionSchema = z.object({
 
 export type BotDefinition = z.infer<typeof BotDefinitionSchema>;
 
+// ─── Orchestrator Bot Definition ────────────────────────────────────────────
+
+export const OrchestratorBotDefinitionSchema = BotDefinitionSchema.extend({
+  /** Marks this bot as an orchestrator (dynamic bot creator) */
+  type: z.literal('orchestrator'),
+  /** System prompt template for orchestrator behavior */
+  orchestratorPrompt: z.string().optional(),
+});
+
+export type OrchestratorBotDefinition = z.infer<typeof OrchestratorBotDefinitionSchema>;
+
 // ─── Message Config Schema ───────────────────────────────────────────────────
 
 export const MessageConfigSchema = z.object({

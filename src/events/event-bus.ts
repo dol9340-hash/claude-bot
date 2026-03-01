@@ -45,13 +45,50 @@ export interface BotStatusEvent {
   timestamp: string;
 }
 
+// ─── Observability Events ────────────────────────────────────────────────────
+
+export interface ToolUseEvent {
+  botName: string;
+  toolName: string;
+  taskId?: string;
+  durationMs: number;
+  timestamp: string;
+}
+
+export interface TaskMetricsEvent {
+  taskId: string;
+  botName: string;
+  durationMs: number;
+  reworkCount: number;
+  timestamp: string;
+}
+
+export interface CostAlertEvent {
+  level: 'warning' | 'critical';
+  budgetPercent: number;
+  totalCostUsd: number;
+  budgetUsd: number;
+  timestamp: string;
+}
+
+export interface DriftDetectedEvent {
+  botName: string;
+  driftScore: number;
+  reason: string;
+  timestamp: string;
+}
+
 export interface SwarmEventMap {
   'bot:created': BotCreatedEvent;
   'bot:completed': BotCompletedEvent;
   'bot:status': BotStatusEvent;
   'cost:update': CostUpdateEvent;
+  'cost:alert': CostAlertEvent;
   'chat:message': ChatMessageEvent;
   'chat:decision': ChatMessageEvent;
+  'tool:used': ToolUseEvent;
+  'task:metrics': TaskMetricsEvent;
+  'drift:detected': DriftDetectedEvent;
   'swarm:started': { botCount: number; timestamp: string };
   'swarm:completed': { totalCostUsd: number; durationMs: number; timestamp: string };
 }

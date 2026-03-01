@@ -49,6 +49,7 @@ export function parseTasks(filePath: string): Task[] {
       maxBudgetUsd: tags['budget'] ? parseFloat(tags['budget']) : undefined,
       maxTurns: tags['turns'] ? parseInt(tags['turns'], 10) : undefined,
       agent: tags['agent'],
+      priority: tags['priority'] ? parseInt(tags['priority'], 10) : undefined,
       retryCount: 0,
       tags,
     });

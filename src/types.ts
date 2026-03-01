@@ -19,6 +19,8 @@ export interface Task {
   maxTurns?: number;
   /** Optional agent name (for swarm mode) */
   agent?: string;
+  /** Task priority (lower = higher priority, default 10) */
+  priority?: number;
   /** Number of retry attempts so far */
   retryCount: number;
   /** Tags extracted from task text, e.g. [cwd:/some/path] */
@@ -64,6 +66,7 @@ export interface CostSummary {
   taskCount: number;
   averageCostPerTask: number;
   costByModel: Record<string, number>;
+  costByBot: Record<string, number>;
   totalInputTokens: number;
   totalOutputTokens: number;
 }
