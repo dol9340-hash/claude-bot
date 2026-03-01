@@ -19,9 +19,5 @@ if not exist "dist\index.js" (
     call npm run build || exit /b 1
 )
 
-if "%~1"=="" (
-    echo [ClaudeBot] Running task queue...
-    node dist\index.js run
-) else (
-    node dist\index.js %*
-)
+echo [ClaudeBot] Running BotGraph swarm...
+node dist\index.js swarm %*
