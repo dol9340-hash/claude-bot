@@ -3,6 +3,7 @@ import type { WorkflowStateDTO, WorkflowStep } from '@shared/api-types';
 interface WorkflowBarProps {
   workflow: WorkflowStateDTO | null;
   connected: boolean;
+  onReset?: () => void;
 }
 
 const steps: { key: WorkflowStep; label: string }[] = [
@@ -22,7 +23,7 @@ const stepOrder: Record<WorkflowStep, number> = {
   completed: 4,
 };
 
-export default function WorkflowBar({ workflow, connected }: WorkflowBarProps) {
+export default function WorkflowBar({ workflow, connected, onReset }: WorkflowBarProps) {
   const currentStep = workflow?.step ?? 'idle';
   const currentIdx = stepOrder[currentStep];
 
@@ -37,16 +38,26 @@ export default function WorkflowBar({ workflow, connected }: WorkflowBarProps) {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className="w-2 h-2 rounded-full"
-            style={{
-              backgroundColor: connected ? 'var(--color-success)' : 'var(--color-danger)',
-            }}
-          />
-          <span className="text-xs text-[var(--text-muted)]">
-            {connected ? 'Connected' : 'Disconnected'}
-          </span>
+        <div className="flex items-center gap-3">
+          {onReset && currentStep !== 'idle' && (
+            <button
+              onClick={onReset}
+              className="px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] bg-[var(--bg-overlay)] rounded hover:bg-[var(--border-default)] transition-colors"
+            >
+              Reset
+            </button>
+          )}
+          <div className="flex items-center gap-1.5">
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{
+                backgroundColor: connected ? 'var(--color-success)' : 'var(--color-danger)',
+              }}
+            />
+            <span className="text-xs text-[var(--text-muted)]">
+              {connected ? 'Connected' : 'Disconnected'}
+            </span>
+          </div>
         </div>
       </div>
 
