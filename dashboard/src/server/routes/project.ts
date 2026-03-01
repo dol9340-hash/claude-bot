@@ -30,9 +30,10 @@ export const projectRoute: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: 'Directory does not exist', ...info });
     }
 
-    // Update project path and restart watcher
+    // Update project path, restart watcher, and connect chat manager
     app.appState.projectPath = resolved;
     app.appState.watcher.start(resolved);
+    app.appState.chatManager.setProjectPath(resolved);
 
     return reply.send(info);
   });
