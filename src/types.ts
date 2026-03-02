@@ -1,123 +1,61 @@
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
-
-export type EngineType = 'sdk' | 'cli';
-
-export interface Task {
-  /** Line number in tasks.md (1-indexed) for write-back */
-  line: number;
-  /** Original raw text from the markdown checkbox */
-  rawText: string;
-  /** Cleaned prompt text sent to the agent */
-  prompt: string;
-  /** Current execution status */
-  status: TaskStatus;
-  /** Optional working directory override */
-  cwd?: string;
-  /** Optional max budget for this task (USD) */
-  maxBudgetUsd?: number;
-  /** Optional max turns */
-  maxTurns?: number;
-  /** Optional agent name (for swarm mode) */
-  agent?: string;
-  /** Task priority (lower = higher priority, default 10) */
-  priority?: number;
-  /** Number of retry attempts so far */
-  retryCount: number;
-  /** Tags extracted from task text, e.g. [cwd:/some/path] */
-  tags: Record<string, string>;
-}
+export type EngineType = 'sdk';
 
 export interface TaskResult {
-  task: Task;
   success: boolean;
   /** Text result or error description */
   result: string;
-  /** Cost in USD (SDK: exact, CLI: estimated or -1 if unavailable) */
+  /** Cost in USD */
   costUsd: number;
   /** Duration in milliseconds */
   durationMs: number;
-  /** Session ID for potential resume */
+  /** Session ID for tracking */
   sessionId: string;
   /** Errors encountered */
   errors: string[];
 }
 
 export interface SessionRecord {
-  taskLine: number;
-  taskPrompt: string;
   sessionId: string;
+  prompt: string;
   costUsd: number;
   durationMs: number;
-  status: TaskStatus;
+  success: boolean;
   timestamp: string;
-  retryCount: number;
-  engine: EngineType;
-}
-
-export interface SessionStore {
-  version: 1;
-  projectCwd: string;
-  totalCostUsd: number;
-  records: SessionRecord[];
-}
-
-export interface CostSummary {
-  totalCostUsd: number;
-  taskCount: number;
-  averageCostPerTask: number;
-  costByModel: Record<string, number>;
-  costByBot: Record<string, number>;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-}
-
-export interface SwarmConfig {
-  enabled: boolean;
-  agents: Record<string, {
-    description: string;
-    prompt: string;
-    tools?: string[];
-    model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
-    maxTurns?: number;
-  }>;
-  mainAgent?: string;
+  phase: string;
+  botName?: string;
+  errorCode?: string;
+  failureReason?: string;
 }
 
 export interface ClaudeBotConfig {
-  /** Execution engine: 'sdk' (API Key) or 'cli' (Max subscription) */
-  engine: EngineType;
-  /** Path to the tasks markdown file */
-  tasksFile: string;
-  /** Default working directory */
-  cwd: string;
   /** Claude model to use */
   model?: string;
+  /** Default working directory */
+  cwd: string;
   /** Permission mode */
   permissionMode: 'default' | 'acceptEdits' | 'bypassPermissions';
-  /** Required when permissionMode is 'bypassPermissions' */
-  allowDangerouslySkipPermissions?: boolean;
-  /** Max budget per task (USD) */
+  /** Max budget per bot task (USD) */
   maxBudgetPerTaskUsd?: number;
-  /** Max turns per task */
+  /** Max turns per bot task */
   maxTurnsPerTask?: number;
-  /** Global max budget for entire run (USD) */
+  /** Global max budget (USD) */
   maxTotalBudgetUsd?: number;
   /** Task timeout in milliseconds */
   taskTimeoutMs: number;
-  /** Max retry attempts per task */
-  maxRetries: number;
-  /** Stop entire queue on first failure */
-  stopOnFailure: boolean;
-  /** Path to session store file */
-  sessionStorePath: string;
   /** Log level */
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   /** Tools the agent is allowed to use */
   allowedTools?: string[];
   /** Additional system prompt prefix */
   systemPromptPrefix?: string;
-  /** Watch mode: poll interval in ms when queue is empty (0 = disabled) */
-  watchIntervalMs: number;
-  /** Multi-agent swarm configuration */
-  swarm?: SwarmConfig;
+  /** Auto-Pilot mode — auto-start next Epic after completion */
+  autoOnboarding?: boolean;
+  /** Retry once when SDK returns error_max_turns */
+  retryOnMaxTurns?: boolean;
+  /** Extra max turns to grant on retry */
+  maxTurnsRetryIncrement?: number;
+  /** Upper bound for max turns during retry */
+  maxTurnsRetryLimit?: number;
+  /** Main-channel heartbeat interval while developing (ms) */
+  developmentHeartbeatIntervalMs?: number;
 }

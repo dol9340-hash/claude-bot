@@ -1,35 +1,29 @@
-import type { SessionRecord } from './types.js';
+export interface SessionRecord {
+  sessionId: string;
+  prompt: string;
+  costUsd: number;
+  durationMs: number;
+  success: boolean;
+  timestamp: string;
+  phase: string;
+  botName?: string;
+  errorCode?: string;
+  failureReason?: string;
+}
 
 export interface ProjectInfo {
   path: string;
   valid: boolean;
-  hasSessionsFile: boolean;
   hasConfigFile: boolean;
-  hasTasksFile: boolean;
-  tasksFilePath: string;
 }
 
 export interface DashboardSummary {
-  totalTasks: number;
-  completedTasks: number;
-  failedTasks: number;
-  pendingTasks: number;
   totalCostUsd: number;
-  averageCostPerTask: number;
-  averageDurationMs: number;
-  totalDurationMs: number;
-  engineBreakdown: {
-    sdk: { count: number; costUsd: number };
-    cli: { count: number; costUsd: number };
-  };
-  budgetUsagePercent: number | null;
-  recentSessions: SessionRecord[];
+  phaseBreakdown: Record<string, { count: number; costUsd: number }>;
 }
 
 export type SSEEvent =
   | { type: 'connected' }
-  | { type: 'sessions_updated' }
-  | { type: 'tasks_updated' }
   | { type: 'config_updated' }
   | { type: 'heartbeat' }
   | { type: 'chat_message' }
@@ -52,8 +46,13 @@ export interface ChatMessageDTO {
   decision?: DecisionCardDTO;
 }
 
-export type DecisionType = 'preview' | 'proposal' | 'approval' | 'question';
+export type DecisionType = 'prediction' | 'documentation' | 'proposal' | 'review' | 'question';
 export type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'modified';
+
+export interface HtmlTab {
+  label: string;
+  html: string;
+}
 
 export interface DecisionCardDTO {
   id: string;
@@ -65,9 +64,17 @@ export interface DecisionCardDTO {
   response?: string;
   createdAt: string;
   resolvedAt?: string;
+  tabs?: HtmlTab[];
 }
 
-export type WorkflowStep = 'idle' | 'onboarding' | 'preview' | 'proposal' | 'execution' | 'completed';
+export type WorkflowStep =
+  | 'idle'
+  | 'onboarding'
+  | 'prediction'
+  | 'documentation'
+  | 'development'
+  | 'review'
+  | 'completed';
 
 export interface WorkflowStateDTO {
   step: WorkflowStep;
@@ -76,6 +83,9 @@ export interface WorkflowStateDTO {
   decisions: DecisionCardDTO[];
   startedAt: string;
   completedAt?: string;
+  epicNumber: number;
+  epics: EpicSummary[];
+  autoOnboarding: boolean;
 }
 
 export interface BotStatusDTO {
@@ -84,6 +94,21 @@ export interface BotStatusDTO {
   costUsd: number;
   tasksCompleted: number;
   tasksFailed: number;
+}
+
+// ─── Epic Types ─────────────────────────────────────────────────────────────
+
+export interface EpicSummary {
+  epicNumber: number;
+  topic: string;
+  startedAt: string;
+  completedAt: string;
+  totalCostUsd: number;
+  durationMs: number;
+  tasksCompleted: number;
+  tasksFailed: number;
+  botNames: string[];
+  modifiedFiles: string[];
 }
 
 // ─── WebSocket Messages ─────────────────────────────────────────────────────

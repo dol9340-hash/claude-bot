@@ -1,12 +1,10 @@
 import { useState, useMemo } from 'react';
 import type { SessionRecord } from '@shared/types';
-import StatusBadge from '../common/StatusBadge';
-import EngineBadge from '../common/EngineBadge';
 import FormatCost from '../common/FormatCost';
 import FormatDuration from '../common/FormatDuration';
 import type { SessionFilterState } from './SessionFilters';
 
-type SortKey = 'taskLine' | 'status' | 'costUsd' | 'durationMs' | 'timestamp' | 'engine';
+type SortKey = 'prompt' | 'success' | 'costUsd' | 'durationMs' | 'timestamp' | 'phase';
 type SortDir = 'asc' | 'desc';
 
 interface SessionTableProps {
@@ -20,8 +18,11 @@ export default function SessionTable({ records, filters }: SessionTableProps) {
 
   const filtered = useMemo(() => {
     return records.filter((r) => {
-      if (filters.status !== 'all' && r.status !== filters.status) return false;
-      if (filters.engine !== 'all' && r.engine !== filters.engine) return false;
+      if (filters.status !== 'all') {
+        if (filters.status === 'success' && !r.success) return false;
+        if (filters.status === 'failed' && r.success) return false;
+      }
+      if (filters.phase !== 'all' && r.phase !== filters.phase) return false;
       return true;
     });
   }, [records, filters]);
@@ -49,7 +50,7 @@ export default function SessionTable({ records, filters }: SessionTableProps) {
       className="text-left py-2 pr-3 font-semibold cursor-pointer hover:text-[var(--text-primary)] select-none"
       onClick={() => handleSort(field)}
     >
-      {label} {sortKey === field ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+      {label} {sortKey === field ? (sortDir === 'asc' ? '\u2191' : '\u2193') : ''}
     </th>
   );
 
@@ -58,14 +59,13 @@ export default function SessionTable({ records, filters }: SessionTableProps) {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wider">
-            <SortHeader label="Line" field="taskLine" />
-            <th className="text-left py-2 pr-3 font-semibold">Task</th>
-            <SortHeader label="Status" field="status" />
+            <SortHeader label="Prompt" field="prompt" />
+            <SortHeader label="Phase" field="phase" />
+            <SortHeader label="Status" field="success" />
+            <th className="text-left py-2 pr-3 font-semibold">Failure</th>
             <SortHeader label="Cost" field="costUsd" />
             <SortHeader label="Duration" field="durationMs" />
-            <SortHeader label="Engine" field="engine" />
             <SortHeader label="Time" field="timestamp" />
-            <th className="text-left py-2 pr-3 font-semibold">Retry</th>
           </tr>
         </thead>
         <tbody>
@@ -74,14 +74,27 @@ export default function SessionTable({ records, filters }: SessionTableProps) {
               key={`${r.sessionId}-${idx}`}
               className="border-t border-[var(--border-default)] hover:bg-[var(--bg-elevated)] transition-colors duration-150"
             >
-              <td className="py-2 pr-3 font-mono text-xs text-[var(--text-muted)]">
-                {r.taskLine}
-              </td>
               <td className="py-2 pr-3 font-mono text-[13px] truncate max-w-[300px]">
-                {r.taskPrompt}
+                {r.prompt}
+              </td>
+              <td className="py-2 pr-3 text-xs text-[var(--text-secondary)]">
+                {r.phase}
               </td>
               <td className="py-2 pr-3">
-                <StatusBadge status={r.status} />
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium"
+                  style={{
+                    color: r.success ? 'var(--color-success)' : 'var(--color-danger)',
+                    backgroundColor: r.success ? 'var(--color-success)18' : 'var(--color-danger)18',
+                  }}
+                >
+                  {r.success ? 'Success' : 'Failed'}
+                </span>
+              </td>
+              <td className="py-2 pr-3 text-xs text-[var(--text-secondary)] max-w-[280px]">
+                {r.success
+                  ? '\u2014'
+                  : [r.errorCode, r.failureReason].filter(Boolean).join(': ').substring(0, 160) || '\u2014'}
               </td>
               <td className="py-2 pr-3 text-right text-[13px]">
                 <FormatCost value={r.costUsd} />
@@ -89,14 +102,8 @@ export default function SessionTable({ records, filters }: SessionTableProps) {
               <td className="py-2 pr-3 text-right text-[13px]">
                 <FormatDuration ms={r.durationMs} />
               </td>
-              <td className="py-2 pr-3">
-                <EngineBadge engine={r.engine} />
-              </td>
               <td className="py-2 pr-3 text-xs text-[var(--text-secondary)] font-mono">
                 {new Date(r.timestamp).toLocaleString()}
-              </td>
-              <td className="py-2 pr-3 text-xs text-[var(--text-muted)] font-mono">
-                {r.retryCount > 0 ? r.retryCount : '—'}
               </td>
             </tr>
           ))}
