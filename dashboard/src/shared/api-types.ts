@@ -31,6 +31,15 @@ export interface ProjectInitResult {
   error?: string;
 }
 
+export interface HealthResponse {
+  status: 'ok';
+  timestamp: string;
+  uptimeSec: number;
+  projectPath: string | null;
+  workflowStep: WorkflowStep;
+  messageCount: number;
+}
+
 export interface DashboardSummary {
   totalCostUsd: number;
   phaseBreakdown: Record<string, { count: number; costUsd: number }>;

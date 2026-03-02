@@ -14,6 +14,7 @@ import { projectRoute } from './routes/project.js';
 import { eventsRoute } from './routes/events.js';
 import { chatRoute } from './routes/chat.js';
 import { reportRoute } from './routes/report.js';
+import { healthRoute } from './routes/health.js';
 import { Watcher } from './services/watcher.js';
 import { ChatManager } from './services/chat-manager.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
@@ -119,6 +120,7 @@ async function main() {
   await app.register(eventsRoute, { prefix: '/api' });
   await app.register(chatRoute, { prefix: '/api' });
   await app.register(reportRoute, { prefix: '/api' });
+  await app.register(healthRoute, { prefix: '/api' });
 
   // Serve static client files if built (works in both dev and prod)
   const clientDir = path.join(__dirname, '..', 'client');

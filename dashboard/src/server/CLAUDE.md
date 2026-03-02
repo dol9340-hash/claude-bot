@@ -22,7 +22,7 @@ interface AppState {
 2. `export async function myRoute(app: FastifyInstance) { ... }` 형태로 export
 3. `index.ts`에서 `await app.register(myRoute, { prefix: '/api' })` 등록
 
-현재 등록된 8개 route: sessions, tasks, config, summary, project, events, chat, report.
+현재 등록된 9개 route: sessions, tasks, config, summary, project, events, chat, report, health.
 
 ## Services (3개 핵심)
 
