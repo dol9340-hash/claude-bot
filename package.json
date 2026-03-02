@@ -13,6 +13,7 @@
     "start": "cd dashboard && npm start",
     "typecheck": "tsc --noEmit && cd dashboard && npm run typecheck",
     "test": "vitest run",
+    "test:ci": "vitest run --exclude tests/e2e/sdk-real.test.ts",
     "test:watch": "vitest"
   },
   "engines": {
