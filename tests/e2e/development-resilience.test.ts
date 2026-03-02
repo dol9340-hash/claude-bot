@@ -99,6 +99,30 @@ describe('Development Resilience', () => {
     expect(reviewCard?.tabs?.[0]?.html).toContain('error_max_turns');
   });
 
+  it('should transition to review quickly after stop command', async () => {
+    env = createTestEnv({
+      delayMs: 30_000,
+      success: true,
+      costPerTask: 0.02,
+    });
+
+    await advanceThroughOnboarding(env.workflow, env.chat, 'Stop handling');
+    approveDecision(env.workflow, env.chat, 'prediction');
+    await waitForStep(env.chat, 'documentation', 2000);
+    approveDecision(env.workflow, env.chat, 'documentation');
+    await waitForStep(env.chat, 'development', 2000);
+    approveDecision(env.workflow, env.chat, 'proposal');
+
+    await new Promise((r) => setTimeout(r, 50));
+    env.workflow.handleUserMessage('중단');
+
+    await waitForStep(env.chat, 'review', 3000);
+    expect(env.executor.getCallCount()).toBe(1);
+
+    const main = env.chat.getMessages('main').map((m) => m.content);
+    expect(main.some((m) => m.includes('사용자 요청에 의해 개발이 중단되었습니다.'))).toBe(true);
+  });
+
   it('should emit heartbeat during development and stop after step changes', async () => {
     env = createTestEnv({ delayMs: 10, success: true, costPerTask: 0.02 });
     vi.useFakeTimers();

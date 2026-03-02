@@ -1,5 +1,4 @@
-import type { Task, TaskResult, ClaudeBotConfig } from '../types.js';
-import type { Logger } from 'pino';
+import type { TaskResult, ClaudeBotConfig } from '../types.js';
 
 export interface ExecutorCallbacks {
   /** Called when cost is incurred */
@@ -8,17 +7,17 @@ export interface ExecutorCallbacks {
   onProgress?: (message: string) => void;
 }
 
+export interface ExecuteOptions {
+  prompt: string;
+  config: ClaudeBotConfig;
+  cwd?: string;
+  abortSignal?: AbortSignal;
+  callbacks?: ExecutorCallbacks;
+}
+
 /**
- * Abstract executor interface shared by SDK and CLI engines.
- * Both engines must implement this contract.
+ * Executor interface for running AI tasks via Agent SDK.
  */
 export interface IExecutor {
-  readonly engineType: 'sdk' | 'cli';
-
-  execute(
-    task: Task,
-    config: ClaudeBotConfig,
-    logger: Logger,
-    callbacks?: ExecutorCallbacks,
-  ): Promise<TaskResult>;
+  execute(options: ExecuteOptions): Promise<TaskResult>;
 }

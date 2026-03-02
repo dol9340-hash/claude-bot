@@ -21,6 +21,7 @@ export interface ExecuteOptions {
   prompt: string;
   config: ExecutorConfig;
   cwd?: string;
+  abortSignal?: AbortSignal;
   callbacks?: ExecutorCallbacks;
 }
 

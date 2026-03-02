@@ -42,6 +42,7 @@ export class MockExecutor implements IExecutor {
   async execute(options: ExecuteOptions): Promise<TaskResult> {
     this.calls.push(options);
     const idx = this.callCount++;
+    const start = Date.now();
 
     if (this.options.progressMessages && this.options.progressMessages.length > 0) {
       for (const msg of this.options.progressMessages) {
@@ -49,7 +50,42 @@ export class MockExecutor implements IExecutor {
       }
     }
 
-    await new Promise(r => setTimeout(r, this.options.delayMs));
+    const waitResult = await new Promise<'done' | 'aborted'>((resolve) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve('done');
+      }, this.options.delayMs);
+
+      const onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        resolve('aborted');
+      };
+
+      const signal = options.abortSignal;
+      const cleanup = () => signal?.removeEventListener('abort', onAbort);
+      if (!signal) return;
+
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+    if (waitResult === 'aborted') {
+      const result: TaskResult = {
+        success: false,
+        result: 'Task aborted by user',
+        costUsd: 0,
+        durationMs: Date.now() - start,
+        sessionId: `mock-abort-${idx}`,
+        errors: ['Task aborted by user'],
+      };
+      options.callbacks?.onCost?.(0, result.sessionId);
+      return result;
+    }
 
     const shouldFail = this.options.failOnCalls?.includes(idx) ?? !this.options.success;
 
@@ -58,7 +94,7 @@ export class MockExecutor implements IExecutor {
         success: false,
         result: this.options.failResultText!,
         costUsd: 0,
-        durationMs: this.options.delayMs!,
+        durationMs: Date.now() - start,
         sessionId: `mock-fail-${idx}`,
         errors: [...(this.options.failErrors ?? ['Simulated failure'])],
       };
@@ -70,7 +106,7 @@ export class MockExecutor implements IExecutor {
       success: true,
       result: this.options.resultText ?? `Mock task completed (call #${idx})`,
       costUsd: this.options.costPerTask!,
-      durationMs: this.options.delayMs!,
+      durationMs: Date.now() - start,
       sessionId: `mock-${idx}`,
       errors: [],
     };

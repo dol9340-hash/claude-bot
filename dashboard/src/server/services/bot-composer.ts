@@ -37,6 +37,7 @@ export class BotComposer {
   private bots: Map<string, Bot> = new Map();
   private baseConfig: ExecutorConfig | null = null;
   private totalCostUsd = 0;
+  private abortRequested = false;
 
   constructor(executor: IExecutor, chat: ChatManager) {
     this.executor = executor;
@@ -60,6 +61,7 @@ export class BotComposer {
 
   createBotTeam(specs: BotSpec[]): Bot[] {
     this.bots.clear();
+    this.abortRequested = false;
     const result: Bot[] = [];
     for (const spec of specs) {
       const bot = this.spawnBot(spec);
@@ -110,6 +112,25 @@ export class BotComposer {
     ].join('\n');
   }
 
+  private createAbortedResult(task: string): BotTaskResult {
+    return {
+      success: false,
+      result: 'Task aborted by user',
+      costUsd: 0,
+      durationMs: 0,
+      sessionId: '',
+      errors: ['Task aborted by user'],
+      botName: '',
+      task,
+    };
+  }
+
+  private isAbortFailure(result: TaskResult): boolean {
+    if (result.success) return false;
+    const merged = [result.result, ...result.errors].join(' ').toLowerCase();
+    return merged.includes('aborted by user') || merged.includes('abort');
+  }
+
   // ─── Bot Execution ────────────────────────────────────────────────────
 
   async executeBot(bot: Bot, task: string): Promise<BotTaskResult> {
@@ -117,8 +138,13 @@ export class BotComposer {
       throw new Error('Base config not set. Call setBaseConfig() first.');
     }
 
+    if (this.abortRequested) {
+      return { ...this.createAbortedResult(task), botName: bot.spec.name };
+    }
+
     bot.status.status = 'working';
-    bot.abortController = new AbortController();
+    const controller = new AbortController();
+    bot.abortController = controller;
     this.broadcastBotStatus();
 
     this.chat.addMessage('bot', `[${bot.spec.name}] 작업 시작: ${task.substring(0, 100)}`, {
@@ -145,6 +171,7 @@ export class BotComposer {
         prompt,
         config: attemptConfig,
         cwd: this.baseConfig!.cwd,
+        abortSignal: controller.signal,
         callbacks: {
           onCost: (costUsd, _sessionId) => {
             const safeCost = Number.isFinite(costUsd) ? Math.max(0, costUsd) : 0;
@@ -183,7 +210,7 @@ export class BotComposer {
       let result = await executeAttempt(task, config, 'initial');
 
       const retryEnabled = config.retryOnMaxTurns ?? true;
-      if (retryEnabled && this.shouldRetryForMaxTurns(result)) {
+      if (retryEnabled && this.shouldRetryForMaxTurns(result) && !this.isAbortFailure(result)) {
         this.chat.addMessage('bot', `[${bot.spec.name}] error_max_turns 감지: 축약 프롬프트로 1회 재시도합니다.`, {
           botName: bot.spec.name,
           channel: 'internal',
@@ -212,7 +239,11 @@ export class BotComposer {
         }
       }
 
-      if (result.success) {
+      const aborted = this.isAbortFailure(result);
+
+      if (aborted) {
+        bot.status.status = 'stopped';
+      } else if (result.success) {
         bot.status.tasksCompleted++;
         bot.status.status = 'idle';
       } else {
@@ -235,11 +266,18 @@ export class BotComposer {
 
       return { ...result, botName: bot.spec.name, task };
     } catch (error) {
-      bot.status.tasksFailed++;
-      bot.status.status = 'error';
+      const aborted = controller.signal.aborted || this.abortRequested;
+      if (aborted) {
+        bot.status.status = 'stopped';
+      } else {
+        bot.status.tasksFailed++;
+        bot.status.status = 'error';
+      }
       this.broadcastBotStatus();
 
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMsg = aborted
+        ? 'Task aborted by user'
+        : (error instanceof Error ? error.message : String(error));
       this.chat.addMessage('bot', `[${bot.spec.name}] 오류: ${errorMsg}`, {
         botName: bot.spec.name,
         channel: 'internal',
@@ -266,11 +304,17 @@ export class BotComposer {
   async executeBotTasks(bot: Bot): Promise<BotTaskResult[]> {
     const results: BotTaskResult[] = [];
     for (const task of bot.spec.tasks) {
+      if (this.abortRequested) break;
       const result = await this.executeBot(bot, task);
       results.push(result);
       if (!result.success) break; // Stop on first failure
     }
-    bot.status.status = results.every(r => r.success) ? 'idle' : 'error';
+
+    if (this.abortRequested || results.some((r) => this.isAbortFailure(r))) {
+      bot.status.status = 'stopped';
+    } else {
+      bot.status.status = results.every(r => r.success) ? 'idle' : 'error';
+    }
     this.broadcastBotStatus();
     return results;
   }
@@ -291,8 +335,13 @@ export class BotComposer {
       allResults.push(...devResults.flat());
     }
 
+    if (this.abortRequested) {
+      return allResults;
+    }
+
     // Phase 2: Execute reviewers sequentially (they review dev output)
     for (const reviewer of reviewers) {
+      if (this.abortRequested) break;
       const results = await this.executeBotTasks(reviewer);
       allResults.push(...results);
     }
@@ -304,19 +353,19 @@ export class BotComposer {
 
   abortBot(name: string): void {
     const bot = this.bots.get(name);
-    if (bot?.abortController) {
-      bot.abortController.abort();
-      bot.status.status = 'stopped';
-      this.broadcastBotStatus();
-    }
+    this.abortRequested = true;
+    if (!bot) return;
+
+    if (bot.abortController) bot.abortController.abort();
+    bot.status.status = 'stopped';
+    this.broadcastBotStatus();
   }
 
   abortAll(): void {
+    this.abortRequested = true;
     for (const bot of this.bots.values()) {
-      if (bot.abortController) {
-        bot.abortController.abort();
-        bot.status.status = 'stopped';
-      }
+      if (bot.abortController) bot.abortController.abort();
+      bot.status.status = 'stopped';
     }
     this.broadcastBotStatus();
   }
@@ -332,5 +381,6 @@ export class BotComposer {
     this.abortAll();
     this.bots.clear();
     this.totalCostUsd = 0;
+    this.abortRequested = false;
   }
 }
