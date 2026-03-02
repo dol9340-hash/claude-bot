@@ -4,34 +4,44 @@ interface WorkflowBarProps {
   workflow: WorkflowStateDTO | null;
   connected: boolean;
   onReset?: () => void;
+  onToggleAutoPilot?: (enabled: boolean) => void;
 }
 
 const steps: { key: WorkflowStep; label: string }[] = [
   { key: 'onboarding', label: 'Onboarding' },
-  { key: 'preview', label: 'Preview' },
-  { key: 'proposal', label: 'Proposal' },
-  { key: 'execution', label: 'Execution' },
+  { key: 'prediction', label: 'Prediction' },
+  { key: 'documentation', label: 'Docs' },
+  { key: 'development', label: 'Dev' },
+  { key: 'review', label: 'Review' },
   { key: 'completed', label: 'Done' },
 ];
 
 const stepOrder: Record<WorkflowStep, number> = {
   idle: -1,
   onboarding: 0,
-  preview: 1,
-  proposal: 2,
-  execution: 3,
-  completed: 4,
+  prediction: 1,
+  documentation: 2,
+  development: 3,
+  review: 4,
+  completed: 5,
 };
 
-export default function WorkflowBar({ workflow, connected, onReset }: WorkflowBarProps) {
+export default function WorkflowBar({ workflow, connected, onReset, onToggleAutoPilot }: WorkflowBarProps) {
   const currentStep = workflow?.step ?? 'idle';
   const currentIdx = stepOrder[currentStep];
+  const epicNumber = workflow?.epicNumber ?? 0;
+  const isAutoPilot = workflow?.autoOnboarding ?? false;
 
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg px-4 py-3">
       <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Workflow</h2>
+          {epicNumber > 0 && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--color-sdk)] bg-opacity-20 text-[var(--color-sdk)]">
+              Epic #{epicNumber}
+            </span>
+          )}
           {workflow?.topic && (
             <span className="text-xs text-[var(--text-secondary)] truncate max-w-xs">
               — {workflow.topic}
@@ -39,6 +49,19 @@ export default function WorkflowBar({ workflow, connected, onReset }: WorkflowBa
           )}
         </div>
         <div className="flex items-center gap-3">
+          {onToggleAutoPilot && (
+            <button
+              onClick={() => onToggleAutoPilot(!isAutoPilot)}
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                isAutoPilot
+                  ? 'bg-[var(--color-success)] bg-opacity-20 text-[var(--color-success)]'
+                  : 'text-[var(--text-muted)] bg-[var(--bg-overlay)] hover:bg-[var(--border-default)]'
+              }`}
+              title={isAutoPilot ? 'Auto-Pilot ON' : 'Auto-Pilot OFF'}
+            >
+              {isAutoPilot ? 'Auto-Pilot ON' : 'Auto-Pilot'}
+            </button>
+          )}
           {onReset && currentStep !== 'idle' && (
             <button
               onClick={onReset}

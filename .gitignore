@@ -9,3 +9,8 @@ dist/
 # Dashboard
 dashboard/node_modules/
 dashboard/dist/
+
+# Local agent/memory artifacts
+.claude/
+docs/.history/
+docs/PRD-Preview.html

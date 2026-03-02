@@ -33,7 +33,7 @@ export default function ChatSearchBar({ onSearch, onFilterBot, activeBots }: Cha
             if (!e.target.value) onSearch('');
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Search messages... (Enter to search)"
+          placeholder="Search only (Enter to filter messages)"
           className="w-full bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-md px-3 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-[var(--color-info)] transition-colors"
           aria-label="Search messages"
         />

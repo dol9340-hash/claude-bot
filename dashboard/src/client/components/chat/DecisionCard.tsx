@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { DecisionCardDTO } from '@shared/api-types';
+import HtmlPreview from './HtmlPreview';
+import TabStrip from './TabStrip';
 
 interface DecisionCardProps {
   card: DecisionCardDTO;
@@ -7,16 +9,23 @@ interface DecisionCardProps {
 }
 
 const typeConfig: Record<string, { icon: string; accent: string }> = {
-  preview: { icon: '📋', accent: 'var(--color-info)' },
-  proposal: { icon: '🤖', accent: 'var(--color-sdk)' },
-  approval: { icon: '✓', accent: 'var(--color-success)' },
-  question: { icon: '?', accent: 'var(--color-warning)' },
+  prediction:    { icon: '\u25C8', accent: 'var(--color-info)' },
+  documentation: { icon: '\uD83D\uDCC4', accent: 'var(--color-sdk)' },
+  proposal:      { icon: '\uD83E\uDD16', accent: 'var(--color-sdk)' },
+  review:        { icon: '\u2713', accent: 'var(--color-success)' },
+  question:      { icon: '?', accent: 'var(--color-warning)' },
 };
 
 export default function DecisionCard({ card, onResolve }: DecisionCardProps) {
   const [response, setResponse] = useState('');
   const [showModify, setShowModify] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
   const config = typeConfig[card.type] ?? typeConfig.question;
+  const hasTabs = card.tabs && card.tabs.length > 0;
+
+  useEffect(() => {
+    setActiveTab(0);
+  }, [card.id, card.tabs?.length]);
 
   return (
     <div
@@ -35,7 +44,25 @@ export default function DecisionCard({ card, onResolve }: DecisionCardProps) {
             </span>
           </div>
           <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-1">{card.title}</h4>
-          <p className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap mb-3">{card.description}</p>
+          <p className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap mb-2">{card.description}</p>
+
+          {hasTabs && (
+            <div className="mb-3">
+              {card.tabs!.length > 1 && (
+                <TabStrip
+                  tabs={card.tabs!}
+                  activeIndex={activeTab}
+                  onSelect={setActiveTab}
+                  accent={config.accent}
+                />
+              )}
+              <HtmlPreview
+                html={card.tabs![activeTab]?.html ?? ''}
+                label={card.tabs!.length === 1 ? 'PREVIEW' : undefined}
+                maxHeight={380}
+              />
+            </div>
+          )}
 
           {showModify && (
             <textarea

@@ -15,6 +15,20 @@ export interface ProjectInfo {
   path: string;
   valid: boolean;
   hasConfigFile: boolean;
+  isNew?: boolean;
+}
+
+export interface ProjectInitRequest {
+  path: string;
+  projectName?: string;
+  model?: string;
+}
+
+export interface ProjectInitResult {
+  success: boolean;
+  path: string;
+  filesCreated: string[];
+  error?: string;
 }
 
 export interface DashboardSummary {

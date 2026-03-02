@@ -7,17 +7,17 @@ interface DurationChartProps {
 }
 
 export default function DurationChart({ records }: DurationChartProps) {
-  const data = records.map((r) => ({
-    name: `#${r.taskLine}`,
+  const data = records.map((r, i) => ({
+    name: `#${i + 1}`,
     duration: Number((r.durationMs / 1000).toFixed(1)),
-    task: r.taskPrompt.slice(0, 25),
+    task: r.prompt.slice(0, 25),
     durationMs: r.durationMs,
   }));
 
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg p-4">
       <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-3">
-        Duration per Task
+        Duration per Session
       </h3>
       <ResponsiveContainer width="100%" height={250}>
         <BarChart data={data}>
@@ -32,11 +32,11 @@ export default function DurationChart({ records }: DurationChartProps) {
               color: '#e6edf3',
               fontSize: '12px',
             }}
-            formatter={(_value: any, _name: any, props: any) => [
+            formatter={(_value: number, _name: string, props: { payload?: { durationMs?: number } }) => [
               formatDuration(props?.payload?.durationMs ?? 0),
               'Duration',
             ]}
-            labelFormatter={(_label: any, payload: any) =>
+            labelFormatter={(_label: string, payload: Array<{ payload?: { task?: string } }>) =>
               payload?.[0]?.payload?.task ?? ''
             }
           />

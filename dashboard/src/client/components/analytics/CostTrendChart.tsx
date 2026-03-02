@@ -15,7 +15,7 @@ export default function CostTrendChart({ records, maxBudget }: CostTrendChartPro
     return {
       name: new Date(r.timestamp).toLocaleDateString(),
       cost: Number(cumulative.toFixed(4)),
-      task: r.taskPrompt.slice(0, 30),
+      task: r.prompt.slice(0, 30),
     };
   });
 
@@ -37,7 +37,7 @@ export default function CostTrendChart({ records, maxBudget }: CostTrendChartPro
               color: '#e6edf3',
               fontSize: '12px',
             }}
-            formatter={(value: number) => [`$${value.toFixed(4)}`, 'Cost']}
+            formatter={(value: number) => [`$${Number(value).toFixed(4)}`, 'Cost']}
           />
           {maxBudget && (
             <ReferenceLine y={maxBudget} stroke="#f85149" strokeDasharray="5 5" label={{ value: `Budget $${maxBudget}`, fill: '#f85149', fontSize: 11 }} />

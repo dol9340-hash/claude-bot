@@ -138,47 +138,41 @@ export default function ChatPage() {
     } catch { /* swallow */ }
   }, []);
 
-  // Send message — optimistic update FIRST, then WS/REST
+  // Send message — WS first, REST fallback for reliability
   const handleSend = useCallback(
     async (content: string) => {
-      // 1) Optimistic: show user's message immediately
-      const tempId = Math.random().toString(36).slice(2, 10);
-      setMessages((prev) => [
-        ...prev,
-        { id: tempId, role: 'user', content, channel: 'main', timestamp: new Date().toISOString() },
-      ]);
+      const sentViaWs = connected && send({ type: 'chat', content });
+      if (sentViaWs) return;
 
-      // 2) Send to server
-      if (connected) {
-        send({ type: 'chat', content });
-      } else {
-        try {
-          await fetch('/api/chat/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content }),
-          });
-          await refreshFromRest();
-        } catch { /* swallow */ }
+      try {
+        await fetch('/api/chat/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+        await refreshFromRest();
+      } catch {
+        // swallow
       }
     },
     [connected, send, refreshFromRest],
   );
 
-  // Resolve decision — WS primary, REST fallback
+  // Resolve decision — WS first, REST fallback for reliability
   const handleDecision = useCallback(
     async (decisionId: string, status: 'approved' | 'rejected' | 'modified', response?: string) => {
-      if (connected) {
-        send({ type: 'decision', decisionId, status, response });
-      } else {
-        try {
-          await fetch('/api/chat/decision', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ decisionId, status, response }),
-          });
-          await refreshFromRest();
-        } catch { /* swallow */ }
+      const sentViaWs = connected && send({ type: 'decision', decisionId, status, response });
+      if (sentViaWs) return;
+
+      try {
+        await fetch('/api/chat/decision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decisionId, status, response }),
+        });
+        await refreshFromRest();
+      } catch {
+        // swallow
       }
     },
     [connected, send, refreshFromRest],
@@ -226,6 +220,18 @@ export default function ChatPage() {
     } catch { /* swallow */ }
   }, []);
 
+  // Toggle auto-pilot
+  const handleToggleAutoPilot = useCallback(async (enabled: boolean) => {
+    try {
+      await fetch('/api/chat/autopilot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      setWorkflow((prev) => prev ? { ...prev, autoOnboarding: enabled } : prev);
+    } catch { /* swallow */ }
+  }, []);
+
   // Keyboard shortcut: Ctrl+K for search focus
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -251,7 +257,7 @@ export default function ChatPage() {
       {/* Notifications */}
       <NotificationToast notifications={notifications} onDismiss={dismissNotification} />
 
-      <WorkflowBar workflow={workflow} connected={connected} onReset={handleReset} />
+      <WorkflowBar workflow={workflow} connected={connected} onReset={handleReset} onToggleAutoPilot={handleToggleAutoPilot} />
 
       <div className="flex-1 flex gap-4 min-h-0 mt-4">
         <div className="flex-1 flex flex-col min-w-0">

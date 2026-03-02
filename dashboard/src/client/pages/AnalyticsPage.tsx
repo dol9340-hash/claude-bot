@@ -16,7 +16,7 @@ export default function AnalyticsPage() {
 
   useSSE({
     onEvent: (type) => {
-      if (type === 'sessions_updated') {
+      if (type === 'config_updated' || type === 'workflow_update') {
         refetch();
         refetchSummary();
       }

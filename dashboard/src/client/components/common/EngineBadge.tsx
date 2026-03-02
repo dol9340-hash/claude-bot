@@ -1,7 +1,5 @@
-import type { EngineType } from '@shared/types';
-
 interface EngineBadgeProps {
-  engine: EngineType;
+  engine: string;
 }
 
 export default function EngineBadge({ engine }: EngineBadgeProps) {

@@ -12,9 +12,8 @@ interface ConfigSection {
 export default function ConfigViewer({ config }: ConfigViewerProps) {
   const sections: ConfigSection[] = [
     {
-      title: 'Engine',
+      title: 'Model',
       items: [
-        { label: 'Engine Type', value: config.engine },
         { label: 'Model', value: config.model },
         { label: 'Permission Mode', value: config.permissionMode },
         { label: 'Allowed Tools', value: config.allowedTools?.join(', ') },
@@ -30,25 +29,12 @@ export default function ConfigViewer({ config }: ConfigViewerProps) {
     {
       title: 'Execution',
       items: [
-        { label: 'Tasks File', value: config.tasksFile },
         { label: 'Working Directory', value: config.cwd },
         { label: 'Max Turns per Task', value: config.maxTurnsPerTask },
         { label: 'Task Timeout', value: config.taskTimeoutMs ? `${config.taskTimeoutMs / 1000}s` : undefined },
-        { label: 'Max Retries', value: config.maxRetries },
-        { label: 'Stop on Failure', value: config.stopOnFailure },
-        { label: 'Watch Interval', value: config.watchIntervalMs ? `${config.watchIntervalMs / 1000}s` : undefined },
         { label: 'Log Level', value: config.logLevel },
+        { label: 'System Prompt Prefix', value: config.systemPromptPrefix },
       ],
-    },
-    {
-      title: 'Swarm',
-      items: config.swarm
-        ? [
-            { label: 'Enabled', value: config.swarm.enabled },
-            { label: 'Main Agent', value: config.swarm.mainAgent },
-            { label: 'Agents', value: Object.keys(config.swarm.agents).join(', ') },
-          ]
-        : [{ label: 'Enabled', value: false }],
     },
   ];
 
@@ -68,7 +54,7 @@ export default function ConfigViewer({ config }: ConfigViewerProps) {
                 <dt className="text-sm text-[var(--text-secondary)]">{label}</dt>
                 <dd className="text-sm font-mono text-[var(--text-primary)]">
                   {value === undefined || value === null ? (
-                    <span className="text-[var(--text-muted)]">—</span>
+                    <span className="text-[var(--text-muted)]">&mdash;</span>
                   ) : typeof value === 'boolean' ? (
                     <span style={{ color: value ? 'var(--color-success)' : 'var(--color-danger)' }}>
                       {value ? 'Yes' : 'No'}

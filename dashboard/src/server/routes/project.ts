@@ -1,12 +1,13 @@
 import type { FastifyPluginAsync } from 'fastify';
 import path from 'node:path';
 import { validateProject } from '../services/file-reader.js';
+import { buildExecutorConfig } from '../services/executor-config.js';
 
 export const projectRoute: FastifyPluginAsync = async (app) => {
-  app.get('/project', async (req, reply) => {
+  app.get('/project', async (_req, reply) => {
     const { projectPath } = app.appState;
     if (!projectPath) {
-      return reply.send({ path: '', valid: false, hasSessionsFile: false, hasConfigFile: false, hasTasksFile: false, tasksFilePath: '' });
+      return reply.send({ path: '', valid: false, hasConfigFile: false });
     }
 
     return reply.send(validateProject(projectPath));
@@ -19,22 +20,20 @@ export const projectRoute: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: 'path is required' });
     }
 
-    // Security: block path traversal
     const resolved = path.resolve(rawPath);
-    if (resolved.includes('..')) {
-      return reply.code(400).send({ error: 'Invalid path' });
-    }
-
     const info = validateProject(resolved);
     if (!info.valid) {
       return reply.code(400).send({ error: 'Directory does not exist', ...info });
     }
 
-    // Update project path, restart watcher, and connect chat/workflow
     app.appState.projectPath = resolved;
     app.appState.watcher.start(resolved);
     app.appState.chatManager.setProjectPath(resolved);
-    app.appState.workflowEngine?.setProjectPath(resolved);
+    app.appState.sessionManager.setProjectPath(resolved);
+    app.appState.botComposer.setBaseConfig(buildExecutorConfig(resolved));
+
+    // Proactive initialization: read AGENTS.md + docs/, greet user
+    app.appState.workflowEngine?.initializeProject(resolved);
 
     return reply.send(info);
   });

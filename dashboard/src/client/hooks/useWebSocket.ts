@@ -48,7 +48,7 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions = {}) {
       };
 
       ws.onerror = () => {
-        ws?.close();
+        // onclose will handle retries; avoid force-closing CONNECTING sockets.
       };
     }
 
@@ -57,14 +57,24 @@ export function useWebSocket({ onMessage }: UseWebSocketOptions = {}) {
     return () => {
       disposed = true;
       clearTimeout(retryTimer);
-      ws?.close();
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
       wsRef.current = null;
     };
   }, []);
 
-  const send = useCallback((msg: WSClientMessage) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(msg));
+  const send = useCallback((msg: WSClientMessage): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+
+    try {
+      ws.send(JSON.stringify(msg));
+      return true;
+    } catch {
+      return false;
     }
   }, []);
 

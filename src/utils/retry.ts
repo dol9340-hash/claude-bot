@@ -1,4 +1,4 @@
-import type { Logger } from 'pino';
+import type { Logger } from '../logger/index.js';
 
 export interface RetryOptions {
   maxRetries: number;

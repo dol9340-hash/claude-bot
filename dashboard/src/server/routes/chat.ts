@@ -1,21 +1,22 @@
 import type { FastifyPluginAsync } from 'fastify';
 import type { WSClientMessage } from '../../shared/api-types.js';
-import { WorkflowEngine } from '../services/workflow-engine.js';
 
 export const chatRoute: FastifyPluginAsync = async (app) => {
-  // Create workflow engine and wire to ChatManager
-  const engine = new WorkflowEngine(app.appState.chatManager);
-  if (app.appState.projectPath) {
-    engine.setProjectPath(app.appState.projectPath);
-  }
+  // Use the shared WorkflowEngine from AppState (created in index.ts)
+  const engine = app.appState.workflowEngine;
 
-  // Expose engine on appState for project path updates
-  app.appState.workflowEngine = engine;
-
-  // REST: get chat history
+  // REST: get chat history (full or paged)
   app.get('/chat/messages', async (_req, reply) => {
     const { chatManager } = app.appState;
-    const channel = (_req.query as { channel?: string }).channel as 'main' | 'internal' | undefined;
+    const q = _req.query as { channel?: string; limit?: string; offset?: string };
+    const channel = q.channel as 'main' | 'internal' | undefined;
+
+    if (q.limit) {
+      const limit = Math.min(Math.max(1, Number(q.limit) || 50), 200);
+      const offset = Math.max(0, Number(q.offset) || 0);
+      return reply.send(chatManager.getMessagesPaged(limit, offset, channel));
+    }
+
     return reply.send(chatManager.getMessages(channel));
   });
 
@@ -73,9 +74,27 @@ export const chatRoute: FastifyPluginAsync = async (app) => {
 
   // REST: reset workflow
   app.post('/chat/reset', async (_req, reply) => {
-    const { chatManager } = app.appState;
+    const { chatManager, botComposer, messageQueue } = app.appState;
+    botComposer.reset();
+    messageQueue.clear();
     chatManager.reset();
+    engine.reset();
     return reply.send({ ok: true });
+  });
+
+  // REST: toggle auto-pilot
+  app.post<{ Body: { enabled: boolean } }>('/chat/autopilot', async (req, reply) => {
+    const { chatManager } = app.appState;
+    const { enabled } = req.body;
+    chatManager.setAutoOnboarding(!!enabled);
+    return reply.send({ autoOnboarding: !!enabled });
+  });
+
+  // REST: get bot statuses
+  app.get('/chat/bots', async (_req, reply) => {
+    const { botComposer } = app.appState;
+    const bots = botComposer.getAllBots().map(b => b.status);
+    return reply.send(bots);
   });
 
   // WebSocket: real-time chat

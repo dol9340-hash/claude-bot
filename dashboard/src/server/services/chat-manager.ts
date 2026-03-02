@@ -3,8 +3,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
 import type {
+  BotStatusDTO,
   ChatMessageDTO,
   DecisionCardDTO,
+  HtmlTab,
   WorkflowStateDTO,
   WorkflowStep,
   DecisionStatus,
@@ -17,6 +19,11 @@ interface ChatStore {
   messages: ChatMessageDTO[];
 }
 
+/** When message count exceeds this, old messages are archived on save */
+const ARCHIVE_THRESHOLD = 500;
+/** Number of recent messages to keep in chat.json after archiving */
+const KEEP_RECENT = 200;
+
 /**
  * ChatManager — manages WebSocket connections, chat messages,
  * workflow state, and decision cards for the Dashboard.
@@ -25,6 +32,7 @@ export class ChatManager {
   private clients = new Set<WebSocket>();
   private store: ChatStore;
   private storePath: string | null = null;
+  private archiveDir: string | null = null;
 
   constructor() {
     this.store = this.createEmptyStore();
@@ -39,6 +47,9 @@ export class ChatManager {
         activeBots: [],
         decisions: [],
         startedAt: new Date().toISOString(),
+        epicNumber: 0,
+        epics: [],
+        autoOnboarding: false,
       },
       messages: [],
     };
@@ -46,6 +57,7 @@ export class ChatManager {
 
   setProjectPath(projectPath: string): void {
     this.storePath = path.join(projectPath, '.claudebot', 'chat.json');
+    this.archiveDir = path.join(projectPath, '.claudebot', 'archive');
     this.load();
   }
 
@@ -66,7 +78,30 @@ export class ChatManager {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
+
+    // Archive old messages when threshold exceeded
+    if (this.store.messages.length > ARCHIVE_THRESHOLD) {
+      this.archiveOldMessages();
+    }
+
     fs.writeFileSync(this.storePath, JSON.stringify(this.store, null, 2), 'utf-8');
+  }
+
+  private archiveOldMessages(): void {
+    if (!this.archiveDir) return;
+
+    const toArchive = this.store.messages.slice(0, -KEEP_RECENT);
+    this.store.messages = this.store.messages.slice(-KEEP_RECENT);
+
+    if (toArchive.length === 0) return;
+
+    if (!fs.existsSync(this.archiveDir)) {
+      fs.mkdirSync(this.archiveDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const archivePath = path.join(this.archiveDir, `chat-${timestamp}.json`);
+    fs.writeFileSync(archivePath, JSON.stringify(toArchive, null, 2), 'utf-8');
   }
 
   // ─── WebSocket Client Management ───────────────────────────────────────
@@ -135,6 +170,27 @@ export class ChatManager {
     return this.store.messages;
   }
 
+  /** Paged message retrieval — returns newest-first, offset from the end */
+  getMessagesPaged(limit = 50, offset = 0, channel?: 'main' | 'internal'): {
+    messages: ChatMessageDTO[];
+    total: number;
+    hasMore: boolean;
+  } {
+    let all = this.store.messages;
+    if (channel) {
+      all = all.filter((m) => m.channel === channel);
+    }
+    const total = all.length;
+    const start = Math.max(0, total - offset - limit);
+    const end = Math.max(0, total - offset);
+    const messages = all.slice(start, end);
+    return { messages, total, hasMore: start > 0 };
+  }
+
+  getMessageCount(): number {
+    return this.store.messages.length;
+  }
+
   // ─── Workflow State ────────────────────────────────────────────────────
 
   getWorkflow(): WorkflowStateDTO {
@@ -165,6 +221,7 @@ export class ChatManager {
     title: string,
     description: string,
     options?: string[],
+    tabs?: HtmlTab[],
   ): DecisionCardDTO {
     const card: DecisionCardDTO = {
       id: crypto.randomUUID().slice(0, 8),
@@ -174,6 +231,7 @@ export class ChatManager {
       options: options ?? ['Approve', 'Modify', 'Reject'],
       status: 'pending',
       createdAt: new Date().toISOString(),
+      ...(tabs && { tabs }),
     };
 
     this.store.workflow.decisions.push(card);
@@ -206,8 +264,46 @@ export class ChatManager {
 
   // ─── Bot Status ─────────────────────────────────────────────────────
 
-  broadcastBots(bots: import('../../shared/api-types.js').BotStatusDTO[]): void {
+  broadcastBots(bots: BotStatusDTO[]): void {
     this.broadcast({ type: 'bots', bots });
+  }
+
+  // ─── Epic ────────────────────────────────────────────────────────────
+
+  getEpicNumber(): number {
+    return this.store.workflow.epicNumber;
+  }
+
+  setAutoOnboarding(auto: boolean): void {
+    this.store.workflow.autoOnboarding = auto;
+    this.save();
+    this.broadcast({ type: 'workflow', state: this.store.workflow });
+  }
+
+  completeEpic(summary: import('../../shared/api-types.js').EpicSummary): void {
+    this.store.workflow.epics.push(summary);
+    this.store.workflow.epicNumber = summary.epicNumber;
+    this.store.workflow.completedAt = new Date().toISOString();
+    this.save();
+    this.broadcast({ type: 'workflow', state: this.store.workflow });
+  }
+
+  resetForNextEpic(): void {
+    const epicNum = this.store.workflow.epicNumber;
+    const epics = this.store.workflow.epics;
+    const auto = this.store.workflow.autoOnboarding;
+    this.store.workflow = {
+      step: 'onboarding',
+      topic: '',
+      activeBots: [],
+      decisions: [],
+      startedAt: new Date().toISOString(),
+      epicNumber: epicNum,
+      epics,
+      autoOnboarding: auto,
+    };
+    this.save();
+    this.broadcast({ type: 'workflow', state: this.store.workflow });
   }
 
   // ─── Reset ────────────────────────────────────────────────────────────

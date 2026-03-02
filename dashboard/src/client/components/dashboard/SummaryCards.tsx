@@ -1,6 +1,5 @@
 import type { DashboardSummary } from '@shared/api-types';
 import { formatCost } from '../common/FormatCost';
-import { formatDuration } from '../common/FormatDuration';
 
 interface SummaryCardsProps {
   summary: DashboardSummary;
@@ -13,36 +12,28 @@ interface CardData {
 }
 
 export default function SummaryCards({ summary }: SummaryCardsProps) {
-  const successRate =
-    summary.totalTasks > 0
-      ? ((summary.completedTasks / summary.totalTasks) * 100).toFixed(1)
-      : '0';
+  const totalSessions = Object.values(summary.phaseBreakdown).reduce((sum, p) => sum + p.count, 0);
 
   const cards: CardData[] = [
-    {
-      label: 'Total Tasks',
-      value: String(summary.totalTasks),
-      color: 'var(--color-info)',
-    },
     {
       label: 'Total Cost',
       value: formatCost(summary.totalCostUsd),
       color: 'var(--color-warning)',
     },
     {
-      label: 'Success Rate',
-      value: `${successRate}%`,
-      color: 'var(--color-success)',
+      label: 'Total Sessions',
+      value: String(totalSessions),
+      color: 'var(--color-info)',
     },
     {
-      label: 'Avg Duration',
-      value: formatDuration(summary.averageDurationMs),
-      color: 'var(--color-sdk)',
+      label: 'Phases',
+      value: String(Object.keys(summary.phaseBreakdown).length),
+      color: 'var(--color-success)',
     },
   ];
 
   return (
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-3 gap-3">
       {cards.map((card) => (
         <div
           key={card.label}

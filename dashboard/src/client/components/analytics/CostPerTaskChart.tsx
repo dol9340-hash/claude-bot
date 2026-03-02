@@ -6,26 +6,23 @@ interface CostPerTaskChartProps {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  completed: '#3fb950',
-  failed: '#f85149',
-  pending: '#58a6ff',
-  running: '#d29922',
-  skipped: '#6e7681',
+  success: '#3fb950',
+  failure: '#f85149',
 };
 
 export default function CostPerTaskChart({ records }: CostPerTaskChartProps) {
   const data = records.map((r, i) => ({
-    name: `#${r.taskLine}`,
+    name: `#${i + 1}`,
     cost: r.costUsd,
-    status: r.status,
-    task: r.taskPrompt.slice(0, 25),
+    success: r.success,
+    task: r.prompt.slice(0, 25),
     idx: i,
   }));
 
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg p-4">
       <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-3">
-        Cost per Task
+        Cost per Session
       </h3>
       <ResponsiveContainer width="100%" height={250}>
         <BarChart data={data}>
@@ -40,14 +37,14 @@ export default function CostPerTaskChart({ records }: CostPerTaskChartProps) {
               color: '#e6edf3',
               fontSize: '12px',
             }}
-            formatter={(value: any) => [`$${Number(value).toFixed(4)}`, 'Cost']}
-            labelFormatter={(_label: any, payload: any) =>
+            formatter={(value: number) => [`$${Number(value).toFixed(4)}`, 'Cost']}
+            labelFormatter={(_label: string, payload: Array<{ payload?: { task?: string } }>) =>
               payload?.[0]?.payload?.task ?? ''
             }
           />
           <Bar dataKey="cost" radius={[4, 4, 0, 0]}>
             {data.map((entry) => (
-              <Cell key={entry.idx} fill={STATUS_COLORS[entry.status] ?? '#6e7681'} />
+              <Cell key={entry.idx} fill={entry.success ? STATUS_COLORS.success : STATUS_COLORS.failure} />
             ))}
           </Bar>
         </BarChart>

@@ -1,220 +1,141 @@
 # ClaudeBot
 
-자율적인 큐 기반 작업 오케스트레이터. Claude Agent SDK(기본) 또는 CLI(폴백) 하이브리드 엔진으로 마크다운 체크리스트의 작업을 순차 실행합니다.
-
-## 사전 요구사항
-
-- **Node.js 18+**
-- 엔진 택 1:
-  - **SDK 엔진** (기본): `ANTHROPIC_API_KEY` 환경변수
-  - **CLI 엔진**: `claude` CLI 설치 + Max 구독
-
-## 설치
-
-```bash
-git clone <repo-url>
-cd claude-bot
-npm install
-npm run build
-```
+대화 기반 개발 오케스트레이터 — 5-Phase 워크플로우로 프로젝트를 관리하는 웹 대시보드.
 
 ## 빠른 시작
 
-### 1. 작업 파일 작성
+### 요구 사항
 
-`docs/todo.md` (기본 경로):
+- Node.js 18+
+- Anthropic API 키 (`ANTHROPIC_API_KEY` 환경 변수)
 
-```markdown
-- [ ] src/utils에 formatDate 유틸리티 함수 추가
-- [ ] 기존 코드의 에러 핸들링 개선
-- [ ] README에 API 문서 섹션 추가
-```
-
-인라인 태그로 작업별 옵션 지정 가능:
-
-```markdown
-- [ ] 인증 모듈 구현 [cwd:./packages/auth] [budget:5.00] [turns:30]
-- [ ] QA 테스트 실행 [agent:reviewer]
-```
-
-| 태그 | 설명 | 예시 |
-|------|------|------|
-| `[cwd:경로]` | 작업 디렉토리 지정 | `[cwd:./backend]` |
-| `[budget:금액]` | 작업별 예산 (USD) | `[budget:3.00]` |
-| `[turns:횟수]` | 최대 에이전트 턴 수 | `[turns:50]` |
-| `[agent:이름]` | 스웜 에이전트 지정 | `[agent:worker]` |
-
-### 2. 실행
+### 설치 및 실행
 
 ```bash
-# 작업 큐 실행
-npx claudebot run
+# 의존성 설치
+npm install
+cd dashboard && npm install && cd ..
 
-# 작업 확인만 (실행 안 함)
-npx claudebot run --dry-run
+# 개발 모드 (Fastify 3001 + Vite 5173)
+npm run dev
 
-# CLI 엔진 사용
-npx claudebot run --engine cli
-
-# 예산 제한
-npx claudebot run --max-budget 5.00
-
-# 모델 지정
-npx claudebot run --model claude-opus-4-6
+# 또는 Windows
+run.bat
 ```
 
-실행 중 `Ctrl+C`로 안전하게 종료됩니다.
+브라우저에서 `http://localhost:5173` 을 열어 대시보드에 접속합니다.
 
-### 3. 배치 파일로 실행 (Windows)
-
-설치/빌드/API Key 확인을 자동으로 처리합니다:
-
-```bat
-run.bat                    :: 작업 큐 실행
-run.bat --dry-run          :: 작업 확인만
-run.bat --engine cli       :: CLI 엔진
-swarm.bat                  :: 멀티봇 스웜 실행
-swarm.bat --dry-run        :: 토폴로지 확인만
-status.bat                 :: 세션 이력/비용 확인
-status.bat --swarm         :: 봇별 비용 표시
-```
-
-### 4. 상태 확인
+### 프로덕션
 
 ```bash
-npx claudebot status
+npm run build
+npm start
 ```
 
-## 작업 상태
+## 워크플로우
 
-실행 후 `docs/todo.md`가 자동 업데이트됩니다:
+ClaudeBot은 5단계 워크플로우를 통해 프로젝트 개발을 진행합니다:
 
-```markdown
-- [x] 완료된 작업
-- [!] 실패한 작업  <!-- FAILED: retry 2 -->
-- [ ] 아직 대기 중인 작업
+```text
+idle → onboarding → prediction → documentation → development → review → completed
 ```
 
-## 설정
+1. **Onboarding** — 자유 대화로 프로젝트 목표 파악. "다음" 또는 "next"로 진행.
+2. **Prediction** — Output Preview HTML 생성. 사용자 승인/수정/거부.
+3. **Documentation** — PRD, TechSpec, Tasks 문서 자동 생성. 탭 형태 미리보기.
+4. **Development** — Bot Team (developer + reviewer) 구성, Agent SDK로 코드 실행.
+5. **Review** — 결과 보고서 생성, 목표 달성도 확인.
 
-`claudebot.config.json` (프로젝트 루트):
+완료 후 **Epic Cycle**로 다음 작업을 자동/수동 선택하여 연속 실행할 수 있습니다.
+
+## 프로젝트 설정
+
+대상 프로젝트 루트에 `claudebot.config.json`을 생성합니다:
 
 ```json
 {
-  "engine": "sdk",
-  "tasksFile": "docs/todo.md",
   "model": "claude-sonnet-4-6",
   "permissionMode": "acceptEdits",
-  "maxBudgetPerTaskUsd": 2.00,
-  "maxTotalBudgetUsd": 20.00,
+  "maxTotalBudgetUsd": 5.0,
+  "maxBudgetPerTaskUsd": 1.0,
   "taskTimeoutMs": 600000,
-  "maxRetries": 2,
-  "stopOnFailure": false,
   "logLevel": "info",
-  "watchIntervalMs": 20000
+  "autoOnboarding": false
 }
 ```
 
-| 옵션 | 기본값 | 설명 |
-|------|--------|------|
-| `engine` | `"sdk"` | `"sdk"` 또는 `"cli"` |
-| `tasksFile` | `"docs/todo.md"` | 작업 마크다운 파일 경로 |
-| `model` | - | Claude 모델 (예: `claude-sonnet-4-6`) |
-| `permissionMode` | `"acceptEdits"` | `default` / `acceptEdits` / `bypassPermissions` |
-| `maxBudgetPerTaskUsd` | - | 작업당 최대 예산 (USD) |
-| `maxTotalBudgetUsd` | - | 전체 세션 최대 예산 |
-| `taskTimeoutMs` | `600000` | 작업 타임아웃 (10분) |
-| `maxRetries` | `2` | 실패 시 재시도 횟수 |
-| `stopOnFailure` | `false` | 실패 시 큐 중단 여부 |
-| `watchIntervalMs` | `20000` | 큐 비었을 때 폴링 간격 (0 = 즉시 종료) |
+모든 필드는 선택적이며 기본값이 적용됩니다. 상세 옵션은 [docs/Config.md](docs/Config.md)를 참조하세요.
 
-CLI 옵션이 설정 파일보다 우선합니다.
+## 프로젝트 구조
 
-## BotGraph (멀티봇 스웜)
+```text
+src/                          # 공유 백엔드 코어
+├── index.ts                  # Dashboard 런처
+├── config.ts                 # Zod 설정 로더
+├── types.ts                  # 코어 타입
+└── engine/
+    ├── sdk-executor.ts       # Agent SDK 실행기
+    └── types.ts              # IExecutor 인터페이스
 
-복수 봇이 역할을 나누어 협업하는 모드입니다.
+dashboard/                    # 풀스택 웹 앱
+├── src/server/               # Fastify 5 서버
+│   ├── index.ts              # 서버 진입점 + AppState
+│   ├── routes/               # REST + WebSocket 라우트
+│   └── services/             # 핵심 서비스
+│       ├── chat-manager.ts   # 채팅 + WebSocket + 영속화
+│       ├── workflow-engine.ts# 5-Phase 상태 머신
+│       ├── bot-composer.ts   # 봇 팀 구성 + 실행
+│       ├── message-queue.ts  # 우선순위 메시지 큐
+│       ├── session-manager.ts# 세션 기록 + 예산 추적
+│       └── html-preview.ts   # HTML 프리뷰 템플릿
+├── src/client/               # React 19 SPA
+│   ├── pages/                # ChatPage, DashboardPage, etc.
+│   └── components/           # UI 컴포넌트
+└── src/shared/               # 서버-클라이언트 공유 타입
 
-### 스웜 설정 파일
-
-`claudebot.swarm.json`:
-
-```json
-{
-  "engine": "sdk",
-  "permissionMode": "acceptEdits",
-  "maxTotalBudgetUsd": 50.00,
-  "swarmGraph": {
-    "workspacePath": ".botspace",
-    "entryBots": ["coordinator"],
-    "bots": {
-      "coordinator": {
-        "model": "claude-opus-4-6",
-        "systemPromptFile": "prompts/coordinator.md",
-        "watchesFiles": ["docs/tasks/*.md"],
-        "canContact": ["worker", "reviewer"],
-        "maxBudgetPerTaskUsd": 5.00,
-        "terminatesOnEmpty": true
-      },
-      "worker": {
-        "model": "claude-sonnet-4-6",
-        "canContact": ["coordinator"],
-        "terminatesOnEmpty": false
-      }
-    },
-    "message": { "routingStrategy": "explicit", "maxRoutingCycles": 3 },
-    "termination": { "gracePeriodMs": 30000 }
-  }
-}
+docs/                         # 프로젝트 문서
+tests/                        # Vitest 테스트
 ```
 
-### 스웜 실행
+## 데이터 저장
 
-```bash
-# 토폴로지 확인 (실행 안 함)
-npx claudebot swarm --dry-run
+대상 프로젝트의 `.claudebot/` 디렉토리에 파일 기반으로 저장합니다:
 
-# 스웜 실행
-npx claudebot swarm --config claudebot.swarm.json
+| 파일 | 내용 |
+| --- | --- |
+| `chat.json` | 워크플로우 상태 + 채팅 이력 |
+| `sessions.json` | 봇 실행 기록 + 비용 누적 |
+| `archive/` | 자동 아카이브된 오래된 메시지 |
 
-# 봇별 비용 확인
-npx claudebot status --swarm
-```
+## 명령어
 
-예제: `examples/swarm-dev-team/`
+| 명령어 | 설명 |
+| --- | --- |
+| `npm run dev` | 개발 서버 (Fastify + Vite) |
+| `npm run build` | 전체 빌드 |
+| `npm start` | 프로덕션 실행 |
+| `npm run typecheck` | 타입 체크 (root + dashboard) |
+| `npm test` | Vitest 테스트 실행 |
+| `npm run test:watch` | 테스트 워치 모드 |
 
-## Dashboard
+## API
 
-웹 기반 모니터링 대시보드:
+### REST 엔드포인트
 
-```bash
-cd dashboard
-npm install
-npm run dev
-```
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET | `/api/chat/messages` | 채팅 이력 (페이징: `?limit=50&offset=0`) |
+| GET | `/api/chat/workflow` | 워크플로우 상태 |
+| POST | `/api/chat/send` | 사용자 메시지 전송 |
+| POST | `/api/chat/decision` | Decision Card 응답 |
+| POST | `/api/chat/reset` | 워크플로우 초기화 |
+| POST | `/api/chat/autopilot` | Auto-Pilot 토글 |
+| GET | `/api/chat/bots` | 봇 상태 조회 |
+| POST | `/api/project` | 프로젝트 경로 설정 |
 
-## CLI 레퍼런스
+### WebSocket
 
-```
-claudebot run [옵션]        작업 큐 실행
-  -f, --file <path>         작업 파일 경로
-  -c, --cwd <path>          작업 디렉토리
-  -m, --model <model>       Claude 모델
-  -e, --engine <type>       sdk | cli
-  --max-retries <n>         재시도 횟수
-  --max-budget <usd>        최대 예산 (USD)
-  --timeout <ms>            타임아웃 (ms)
-  --stop-on-failure         실패 시 중단
-  --permission-mode <mode>  권한 모드
-  --watch-interval <ms>     폴링 간격 (0=종료)
-  --dry-run                 실행 없이 확인만
-
-claudebot swarm [옵션]      멀티봇 스웜 실행
-  --config <path>           스웜 설정 파일 (기본: claudebot.swarm.json)
-  --dry-run                 토폴로지 확인만
-
-claudebot status [옵션]     세션 이력/비용 확인
-  --swarm                   봇별 비용 표시
-```
+`ws://localhost:3001/api/chat/ws` — 실시간 채팅, 워크플로우 상태, 봇 상태 브로드캐스트.
 
 ## 라이선스
 

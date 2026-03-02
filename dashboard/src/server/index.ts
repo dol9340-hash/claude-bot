@@ -16,6 +16,12 @@ import { chatRoute } from './routes/chat.js';
 import { reportRoute } from './routes/report.js';
 import { Watcher } from './services/watcher.js';
 import { ChatManager } from './services/chat-manager.js';
+import { WorkflowEngine } from './services/workflow-engine.js';
+import { BotComposer } from './services/bot-composer.js';
+import { MessageQueue } from './services/message-queue.js';
+import { SessionManager } from './services/session-manager.js';
+import { buildExecutorConfig } from './services/executor-config.js';
+import type { IExecutor } from './services/executor-types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,7 +52,10 @@ export interface AppState {
   projectPath: string | null;
   watcher: Watcher;
   chatManager: ChatManager;
-  workflowEngine?: import('./services/workflow-engine.js').WorkflowEngine;
+  workflowEngine: WorkflowEngine;
+  botComposer: BotComposer;
+  messageQueue: MessageQueue;
+  sessionManager: SessionManager;
 }
 
 async function main() {
@@ -56,10 +65,38 @@ async function main() {
 
   const watcher = new Watcher();
   const chatManager = new ChatManager();
+
+  // Dynamic import to avoid rootDir boundary violation
+  let executor: IExecutor;
+  try {
+    const { SdkExecutor } = await import('../../../src/engine/sdk-executor.js');
+    executor = new SdkExecutor();
+  } catch {
+    // Fallback stub executor for when SDK is not available
+    executor = {
+      async execute() {
+        return { success: false, result: 'SDK not available', costUsd: 0, durationMs: 0, sessionId: '', errors: ['SDK not loaded'] };
+      },
+    };
+  }
+
+  const botComposer = new BotComposer(executor, chatManager);
+  const messageQueue = new MessageQueue();
+  const sessionManager = new SessionManager();
+
+  const workflowEngine = new WorkflowEngine(chatManager);
+  workflowEngine.setBotComposer(botComposer);
+  workflowEngine.setMessageQueue(messageQueue);
+  workflowEngine.setSessionManager(sessionManager);
+
   const state: AppState = {
     projectPath: project ?? null,
     watcher,
     chatManager,
+    workflowEngine,
+    botComposer,
+    messageQueue,
+    sessionManager,
   };
 
   // Decorate fastify with app state
@@ -95,10 +132,16 @@ async function main() {
     }
   } catch { /* no static files available */ }
 
-  // Start watcher and chat manager if project path is set
+  // Start watcher, chat manager, and workflow if project path is set
   if (state.projectPath) {
     watcher.start(state.projectPath);
     chatManager.setProjectPath(state.projectPath);
+    sessionManager.setProjectPath(state.projectPath);
+
+    // Always provide bot executor defaults even when config file is missing.
+    botComposer.setBaseConfig(buildExecutorConfig(state.projectPath));
+
+    workflowEngine.initializeProject(state.projectPath);
   }
 
   await app.listen({ port, host: 'localhost' });

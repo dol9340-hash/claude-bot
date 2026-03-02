@@ -8,7 +8,7 @@ interface BudgetGaugeProps {
 
 export default function BudgetGauge({ summary, maxBudget }: BudgetGaugeProps) {
   const budget = maxBudget ?? 0;
-  const percent = summary.budgetUsagePercent ?? 0;
+  const percent = budget > 0 ? (summary.totalCostUsd / budget) * 100 : 0;
   const barColor =
     percent > 90
       ? 'var(--color-danger)'

@@ -1,6 +1,4 @@
 import type { SessionRecord } from '@shared/types';
-import StatusBadge from '../common/StatusBadge';
-import EngineBadge from '../common/EngineBadge';
 import FormatCost from '../common/FormatCost';
 import FormatDuration from '../common/FormatDuration';
 
@@ -24,11 +22,11 @@ export default function RecentSessions({ sessions }: RecentSessionsProps) {
             <thead>
               <tr className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wider">
                 <th className="text-left py-2 pr-3 font-semibold">#</th>
-                <th className="text-left py-2 pr-3 font-semibold">Task</th>
+                <th className="text-left py-2 pr-3 font-semibold">Prompt</th>
+                <th className="text-left py-2 pr-3 font-semibold">Phase</th>
                 <th className="text-left py-2 pr-3 font-semibold">Status</th>
                 <th className="text-right py-2 pr-3 font-semibold">Cost</th>
-                <th className="text-right py-2 pr-3 font-semibold">Time</th>
-                <th className="text-left py-2 font-semibold">Engine</th>
+                <th className="text-right py-2 font-semibold">Time</th>
               </tr>
             </thead>
             <tbody>
@@ -38,22 +36,30 @@ export default function RecentSessions({ sessions }: RecentSessionsProps) {
                   className="border-t border-[var(--border-default)] hover:bg-[var(--bg-elevated)] transition-colors duration-150"
                 >
                   <td className="py-2 pr-3 font-mono text-xs text-[var(--text-muted)]">
-                    {session.taskLine}
+                    {idx + 1}
                   </td>
                   <td className="py-2 pr-3 font-mono text-[13px] truncate max-w-[280px]">
-                    {session.taskPrompt}
+                    {session.prompt}
+                  </td>
+                  <td className="py-2 pr-3 text-xs text-[var(--text-secondary)]">
+                    {session.phase}
                   </td>
                   <td className="py-2 pr-3">
-                    <StatusBadge status={session.status} />
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium"
+                      style={{
+                        color: session.success ? 'var(--color-success)' : 'var(--color-danger)',
+                        backgroundColor: session.success ? 'var(--color-success)18' : 'var(--color-danger)18',
+                      }}
+                    >
+                      {session.success ? 'Success' : 'Failed'}
+                    </span>
                   </td>
                   <td className="py-2 pr-3 text-right text-[13px]">
                     <FormatCost value={session.costUsd} />
                   </td>
-                  <td className="py-2 pr-3 text-right text-[13px]">
+                  <td className="py-2 text-right text-[13px]">
                     <FormatDuration ms={session.durationMs} />
-                  </td>
-                  <td className="py-2">
-                    <EngineBadge engine={session.engine} />
                   </td>
                 </tr>
               ))}

@@ -1,706 +1,730 @@
-# ClaudeBot 기술 명세서
+# 기술 명세서 (TechSpec): ClaudeBot
 
-> 버전: 0.1.0 — 최종 업데이트: 2026-02-28
-
----
-
-## 1. 개요
-
-**ClaudeBot**은 자율적인 큐 기반 태스크 오케스트레이터로, Claude를 대화형 어시스턴트에서 벗어나 백그라운드에서 지속적으로 실행되는 능동적이고 목표 지향적인 에이전트로 전환합니다.
-
-**핵심 철학:** _AI와 단순히 대화하는 것을 멈추고, 위임을 시작하라._
-
-태스크는 파일(예: `tasks.md`) 내 마크다운 체크박스로 정의됩니다. ClaudeBot은 큐를 읽고, Claude를 사용하여 각 태스크를 실행하며, 결과를 파일에 직접 표시(`[x]` 또는 `[!]`)하고, 무인 상태로 계속 진행합니다.
-
-**핵심 차별점:** 하이브리드 이중 엔진 설계를 통해 Anthropic API 키(SDK 엔진) 또는 Claude Max 구독(CLI 엔진) 중 하나를 선택하여 과금할 수 있으며, 동일한 태스크 큐 동작을 제공합니다.
+> PRD v0.3 기준 · 현재 구현 상태 반영
 
 ---
 
-## 2. 아키텍처 개요
+## 1. 시스템 개요
+
+ClaudeBot은 **단일 웹 앱**으로, 사용자가 브라우저에서 대화하면 백엔드가 Agent SDK를 통해 봇을 실행하는 구조이다.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│              src/index.ts  (Commander CLI)                  │
-│   run command ──────────────────► ClaudeBot.run()           │
-│   status command ───────────────► SessionManager.getStore() │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-          ┌──────────▼──────────┐
-          │   src/config.ts     │  Zod 검증 설정
-          │   src/bot.ts        │  오케스트레이션 루프
-          └──────┬────────┬─────┘
-                 │        │
-    ┌────────────▼──┐  ┌──▼────────────┐
-    │  Task Parser  │  │  Task Writer  │
-    │ parser.ts     │  │  writer.ts    │
-    └────────────┬──┘  └──────────────┘
-                 │
-    ┌────────────▼──────────────────────┐
-    │         Engine Factory            │
-    │         factory.ts                │
-    └────────┬──────────────────┬───────┘
-             │                  │
-  ┌──────────▼──────┐  ┌────────▼──────────┐
-  │  SDK Executor   │  │   CLI Executor    │
-  │  sdk-executor.ts│  │  cli-executor.ts  │
-  │                 │  │                   │
-  │ query() async   │  │ spawn('claude')   │
-  │ 정확한 비용     │  │ stream-json 파싱  │
-  │ 네이티브 서브에이전트│  │ Max 구독         │
-  │ API Key 과금    │  │ 비용 추적 불가    │
-  └──────────┬──────┘  └────────┬──────────┘
-             └────────┬─────────┘
-                      │
-          ┌───────────▼───────────────┐
-          │    결과 처리              │
-          │  SessionManager.record()  │
-          │  CostTracker.record()     │
-          │  writer.updateTaskInFile()│
-          └───────────────────────────┘
-                      │
-          ┌───────────▼───────────────┐
-          │   영속 스토리지           │
-          │  .claudebot/sessions.json │
-          │  tasks.md (체크박스 상태) │
-          └───────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Browser (React 19 SPA)                                  │
+│  ┌──────────┐  ┌───────────┐  ┌────────────────────┐    │
+│  │ ChatPage │  │ WorkflowBar│  │ Bot Status Panel  │    │
+│  └──────────┘  └───────────┘  └────────────────────┘    │
+│       │ WebSocket + REST + SSE                           │
+├──────────────────────────────────────────────────────────┤
+│  Fastify 5 Server (:3001)                                │
+│  ┌──────────────┐  ┌───────────────┐  ┌──────────────┐  │
+│  │ ChatManager  │  │WorkflowEngine │  │ BotComposer  │  │
+│  │ (WS + JSON)  │  │ (5-Phase FSM) │  │ (동적 생성)  │  │
+│  └──────────────┘  └───────────────┘  └──────────────┘  │
+│       │                    │                  │           │
+│       │              ┌─────┴─────┐           │           │
+│       │              │ SdkExecutor│←──────────┘           │
+│       │              └───────────┘                        │
+│       │                    │ Agent SDK                    │
+│       ▼                    ▼                              │
+│  .claudebot/          Anthropic API                      │
+│  chat.json                                               │
+│  sessions.json                                           │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. 기술 스택
+## 2. 기술 스택
 
-| 구성 요소         | 기술                               | 버전     |
-|-------------------|------------------------------------|----------|
-| 언어              | TypeScript (ESM, strict 모드)      | ^5.7.0   |
-| 런타임            | Node.js                            | >=18.0.0 |
-| 주요 엔진         | @anthropic-ai/claude-agent-sdk     | ^0.2.62  |
-| CLI 프레임워크    | Commander.js                       | ^13.1.0  |
-| 로깅              | 커스텀 콘솔 래퍼 (Pino 인터페이스 호환) | —        |
-| 설정 검증         | Zod                                | ^4.0.0   |
-| 모듈 시스템       | ES2022, Node16 resolution          | —        |
-| 빌드 도구         | tsc (TypeScript 컴파일러)          | —        |
-| 개발용 실행기     | tsx                                | ^4.19.0  |
+| 계층 | 기술 | 버전 | 비고 |
+| ---- | ---- | ---- | ---- |
+| Frontend | React + Vite + Tailwind CSS | 19 / 6 / 4 | SPA, bundler resolution |
+| Backend | Fastify + WebSocket | 5 | `@fastify/websocket@11` |
+| AI Engine | `@anthropic-ai/claude-agent-sdk` | ^0.2.62 | streaming async generator |
+| 실시간 | WebSocket (채팅) + SSE (파일 감시) | — | 이중 채널 |
+| 검증 | Zod | ^4.0 | config 스키마 |
+| 파일 감시 | chokidar | ^4 | `.claudebot/` + config |
+| 언어 | TypeScript (ESM) | ^5.7 | `"type": "module"` 전역 |
 
 ---
 
-## 4. 핵심 컴포넌트
-
-### 4.1 CLI 진입점 — [src/index.ts](../src/index.ts)
-
-Commander.js 기반 CLI로, 세 가지 명령어를 제공합니다.
-
-#### `claudebot run`
-
-큐에 있는 모든 대기 중인 태스크를 실행합니다.
-
-| 플래그 | 타입 | 기본값 | 설명 |
-|------|------|---------|-------------|
-| `-f, --file <path>` | string | 설정값 | 태스크 마크다운 파일 경로 |
-| `-c, --cwd <path>` | string | `process.cwd()` | 작업 디렉토리 |
-| `-m, --model <name>` | string | `claude-sonnet-4-6` | Claude 모델 ID |
-| `-e, --engine <type>` | `sdk\|cli` | `sdk` | 실행 엔진 |
-| `--max-retries <n>` | number | 2 | 태스크당 최대 재시도 횟수 |
-| `--max-budget <usd>` | number | 20.00 | 총 예산 한도 (USD) |
-| `--timeout <ms>` | number | 600000 | 태스크당 타임아웃 (ms) |
-| `--stop-on-failure` | flag | false | 첫 번째 실패 시 큐 중단 |
-| `--permission-mode <mode>` | string | `acceptEdits` | Claude 권한 모드 |
-| `--log-level <level>` | string | `info` | 로그 상세도 |
-| `--watch-interval <ms>` | number | 20000 | 와치 모드 폴링 간격 |
-| `--dry-run` | flag | false | 태스크 파싱만, 실행 안 함 |
-
-SIGINT/SIGTERM 핸들러를 등록하여 정상 종료를 위해 `bot.abort()`를 호출합니다.
-
-#### `claudebot swarm`
-
-멀티봇 BotGraph 스웜을 실행합니다.
-
-| 플래그 | 타입 | 기본값 | 설명 |
-|------|------|---------|-------------|
-| `--config <path>` | string | `claudebot.swarm.json` | 스웜 설정 파일 경로 |
-| `--log-level <level>` | string | `info` | 로그 상세도 |
-| `--dry-run` | flag | false | config 유효성 검사 및 봇 토폴로지만 표시 |
-
-#### `claudebot status`
-
-`.claudebot/sessions.json`을 읽어 다음 정보를 출력합니다:
-
-- 누적 총 비용 (USD)
-- 총 태스크 수
-- 최근 10개의 세션 레코드 (줄 번호, 상태, 비용, 소요 시간, 프롬프트 요약)
-
-| 플래그 | 타입 | 기본값 | 설명 |
-|------|------|---------|-------------|
-| `--swarm` | flag | false | 봇별 스웜 비용 요약 표시 |
-
----
-
-### 4.2 설정 — [src/config.ts](../src/config.ts)
-
-**파일 탐색 순서:** `claudebot.config.json` → `claudebot.config.js` → `claudebot.config.ts` (`process.cwd()` 기준).
-
-**Zod 스키마 및 기본값:**
-
-```typescript
-{
-  engine: 'sdk' | 'cli'               // 기본값: 'sdk'
-  tasksFile: string                    // 기본값: 'docs/todo.md'
-  cwd: string                          // 기본값: process.cwd()
-  model?: string                       // 기본값: undefined (SDK 기본값 사용)
-  permissionMode: 'default'            // 기본값: 'acceptEdits'
-               | 'acceptEdits'
-               | 'bypassPermissions'
-  maxBudgetPerTaskUsd?: number         // 기본값: undefined (태스크당 한도 없음)
-  maxTotalBudgetUsd?: number           // 기본값: undefined (전체 한도 없음)
-  taskTimeoutMs: number                // 기본값: 600_000 (10분)
-  maxRetries: number                   // 기본값: 2
-  stopOnFailure: boolean               // 기본값: false
-  sessionStorePath: string             // 기본값: '.claudebot/sessions.json'
-  logLevel: 'debug'|'info'|'warn'|'error' // 기본값: 'info'
-  watchIntervalMs: number              // 기본값: 20_000 (20초)
-  swarm?: SwarmConfig                  // 선택적 스웜 설정
-}
-```
-
-CLI 플래그는 파일 설정 위에 병합됩니다 (CLI 플래그가 우선).
-
----
-
-### 4.3 봇 오케스트레이터 — [src/bot.ts](../src/bot.ts)
-
-**클래스:** `ClaudeBot`
-
-**생성자:** `new ClaudeBot(config: ClaudeBotConfig, logger: Logger)`
-
-내부적으로 다음을 생성합니다:
-
-- `IExecutor` — `createExecutor(config.engine)` 호출
-- `SessionManager` — 영속 기록용
-- `CostTracker` — 예산 집행용
-- `AbortController` — 정상 종료용
-
-#### 메서드
-
-| 메서드 | 시그니처 | 설명 |
-|--------|-----------|-------------|
-| `run()` | `(): Promise<BotRunResult>` | 주 진입점. 모든 대기 태스크를 실행합니다. |
-| `abort()` | `(): void` | 종료 신호 전송. 현재 태스크 완료 후 큐 정지. |
-| `executeWithRetry()` | `(task): Promise<TaskResult>` | 지수 백오프로 executor를 래핑합니다. |
-| `sleep()` | `(ms): Promise<void>` | 와치 모드 폴링을 위한 중단 인식 슬립. |
-
-#### 태스크 실행 루프
-
-```
-parseTasks(tasksFile)
-  → 대기 중인 태스크 필터링
-  → 각 태스크에 대해:
-      예산 확인 → 한도 초과 시 건너뜀
-      executeWithRetry(task)
-        → executor.execute(task, config, logger)
-        → 실패 시: 지수 백오프, 최대 maxRetries 재시도
-      updateTaskInFile(task, result)   // [x] 또는 [!]
-      sessionManager.record(result)
-      costTracker.record(result.costUsd)
-  → 대기 태스크 없음 && 와치 모드: sleep(watchIntervalMs), 루프
-```
-
-#### 반환 타입: `BotRunResult`
-
-```typescript
-{
-  totalTasks: number;
-  completed: number;
-  failed: number;
-  skipped: number;
-  totalCostUsd: number;
-  totalDurationMs: number;
-  results: TaskResult[];
-}
-```
-
----
-
-### 4.4 실행 엔진
-
-#### IExecutor 인터페이스 — [src/engine/types.ts](../src/engine/types.ts)
-
-```typescript
-interface IExecutor {
-  readonly engineType: 'sdk' | 'cli';
-  execute(
-    task: Task,
-    config: ClaudeBotConfig,
-    logger: Logger,
-    callbacks?: ExecutorCallbacks,
-  ): Promise<TaskResult>;
-}
-
-interface ExecutorCallbacks {
-  onCost?: (costUsd: number) => void;
-  onProgress?: (text: string) => void;
-}
-```
-
-#### SDK Executor — [src/engine/sdk-executor.ts](../src/engine/sdk-executor.ts) ✅ 작동 중
-
-**과금:** Anthropic API Key (토큰당 과금)
-**비용 추적:** 정확한 값 (`SDKResultMessage.total_cost_usd`)
-
-**실행 흐름:**
-
-1. `taskTimeoutMs` 데드라인으로 `AbortController` 생성
-2. `AgentSDKOptions` 구성:
-   - `model` (설정 또는 태스크 태그에서)
-   - `maxTurns` (태스크 태그에서 또는 undefined)
-   - `permissionMode` (설정에서)
-   - `agents` (스웜 설정이 있을 경우)
-3. `query(prompt, options)` 호출 — 비동기 제너레이터 반환
-4. 제너레이터에서 메시지 순회:
-   - `type: 'system', subtype: 'init'` → `session_id` 캡처
-   - `type: 'result'` → `total_cost_usd`, `duration_ms`, `is_error` 캡처
-5. 정확한 비용이 포함된 `TaskResult` 반환
-
-**검증 완료:** 2026-02-27에 태스크 2개 성공적으로 실행 (총 $0.1094).
-
-#### CLI Executor — [src/engine/cli-executor.ts](../src/engine/cli-executor.ts) ✅ 작동 중
-
-**과금:** Claude Max 구독 (정액 요금)
-**비용 추적:** 불가능 (`-1` 반환)
-
-**실행 흐름:**
-
-1. CLI 인수 구성: `-p <prompt> --output-format stream-json --verbose [--model] [--max-turns] [--permission-mode]`
-2. `spawn('claude', args)` — TTY 멈춤 방지를 위해 stdin 즉시 닫기
-3. stdout에서 개행 구분 JSON 파싱:
-   - `type: 'system', subtype: 'init'` → `session_id` 캡처
-   - `type: 'result'` → `is_error`, `cost_usd` 캡처
-4. 프로세스 종료 코드 처리
-5. `AbortController` 타임아웃 적용
-
-**검증 완료:** 2026-02-27 ~ 2026-02-28에 태스크 8개 성공적으로 실행 (CLI 구독 총 ~$0.586).
-
-#### Engine Factory — [src/engine/factory.ts](../src/engine/factory.ts)
-
-```typescript
-function createExecutor(engine: 'sdk' | 'cli'): IExecutor
-```
-
-단순 팩토리 함수 — 설정에 따라 `SdkExecutor` 또는 `CliExecutor`를 반환합니다.
-
----
-
-### 4.5 태스크 시스템
-
-#### 파서 — [src/task/parser.ts](../src/task/parser.ts)
-
-**정규식:** `^(\s*[-*]\s*)\[([ xX!])\]\s+(.+)$`
-
-**체크박스 상태:**
-
-| 마커 | 상태 | 동작 |
-|--------|--------|----------|
-| `[ ]` | 대기 중 | 파싱 후 실행 큐에 추가 |
-| `[x]` 또는 `[X]` | 완료됨 | 건너뜀 |
-| `[!]` | 실패함 | 건너뜀 |
-
-**인라인 태그** (실행 전 프롬프트에서 제거됨):
-
-| 태그 | 필드 | 예시 |
-|-----|-------|---------|
-| `[cwd:path]` | `task.cwd` | `[cwd:src/utils]` |
-| `[budget:n]` | `task.maxBudgetUsd` | `[budget:0.50]` |
-| `[turns:n]` | `task.maxTurns` | `[turns:10]` |
-| `[agent:name]` | `task.agent` | `[agent:developer]` |
-
-**태스크 객체:**
-
-```typescript
-interface Task {
-  line: number;          // 파일 내 1-indexed 줄 번호 (쓰기 복귀용)
-  rawText: string;       // 원본 줄 내용
-  prompt: string;        // 정제된 텍스트 (태그 제거됨)
-  status: TaskStatus;    // 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
-  cwd?: string;
-  maxBudgetUsd?: number;
-  maxTurns?: number;
-  agent?: string;
-  retryCount: number;
-  tags: Record<string, string>;
-}
-```
-
-#### 라이터 — [src/task/writer.ts](../src/task/writer.ts)
-
-각 실행 후 태스크 파일을 제자리에서 업데이트합니다:
-
-- **완료:** `[ ]` → `[x]`
-- **실패:** `[ ]` → `[!]` + `<!-- FAILED: retry N -->` 주석 추가
-- **줄 끝 보존:** CRLF vs LF를 감지하여 원본 형식 유지
-
----
-
-### 4.6 세션 관리 — [src/session/manager.ts](../src/session/manager.ts)
-
-**저장 경로:** `.claudebot/sessions.json` (`sessionStorePath`로 변경 가능)
-
-**SessionStore 형식:**
-
-```json
-{
-  "version": 1,
-  "projectCwd": "/path/to/project",
-  "totalCostUsd": 0.69503695,
-  "records": [...]
-}
-```
-
-**SessionRecord 스키마:**
-
-```typescript
-interface SessionRecord {
-  taskLine: number;
-  taskPrompt: string;
-  sessionId: string;
-  costUsd: number;
-  durationMs: number;
-  status: TaskStatus;
-  timestamp: string;    // ISO 8601
-  retryCount: number;
-  engine: 'sdk' | 'cli';
-}
-```
-
-초기화 시 자동 로드, `recordResult()` 호출 후 자동 저장.
-
----
-
-### 4.7 비용 추적기 — [src/cost/tracker.ts](../src/cost/tracker.ts)
-
-현재 실행 세션을 위한 인메모리 추적기입니다.
-
-```typescript
-class CostTracker {
-  record(costUsd: number): void;
-  isOverBudget(): boolean;          // config.maxTotalBudgetUsd에 대해 확인
-  remainingBudget(): number | null;
-  getSummary(): CostSummary;
-}
-
-interface CostSummary {
-  totalCostUsd: number;
-  taskCount: number;
-  averageCostPerTask: number;
-  costByModel: Record<string, number>;
-  costByBot: Record<string, number>;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-}
-```
-
-예산 집행: `bot.ts`는 각 태스크 전에 `isOverBudget()`을 호출합니다. 초과 시 나머지 태스크는 `skipped`로 표시됩니다.
-
----
-
-### 4.8 유틸리티
-
-#### AbortController 래퍼 — [src/utils/abort.ts](../src/utils/abort.ts)
-
-```typescript
-function createAbortController(timeoutMs?: number): {
-  controller: AbortController;
-  cleanup: () => void;   // 타임아웃 타이머 해제
-}
-```
-
-데드라인에 `controller.abort()`를 호출하는 `setTimeout`을 설정합니다. 메모리 누수 방지를 위해 태스크 완료 후 반드시 `cleanup()`을 호출해야 합니다.
-
-#### 재시도 래퍼 — [src/utils/retry.ts](../src/utils/retry.ts)
-
-```typescript
-function withRetry<T>(
-  fn: () => Promise<T>,
-  shouldRetry: (error: unknown, result?: T) => boolean,
-  opts?: RetryOptions,
-): Promise<T>
-
-interface RetryOptions {
-  maxRetries: number;
-  baseDelayMs: number;   // 기본값: 1000
-  maxDelayMs: number;    // 기본값: 30_000
-  logger?: Logger;
-}
-```
-
-**백오프 공식:** `delay = min(baseDelayMs × 2^attempt, maxDelayMs)`
-
----
-
-### 4.9 멀티 에이전트 스웜 — [src/agent/swarm.ts](../src/agent/swarm.ts)
-
-> **상태:** 프레임워크 정의 완료. 주 실행 루프에 아직 통합되지 않음.
-
-Agent SDK의 네이티브 `agents` 옵션 사용 — 외부 메시지 브로커(Redis, SQLite) 불필요.
-
-#### 기본 파이프라인: Manager → Developer + QA
-
-| 에이전트 | 모델 | 도구 | 역할 |
-|-------|-------|-------|------|
-| Manager | Opus | Read, Grep, Glob, Task | 태스크 분해, `Task` 도구로 위임, 결과 합성 |
-| Developer | Sonnet | Read, Grep, Glob, Edit, Write, Bash | 코드 변경 구현 |
-| QA | Sonnet | Read, Grep, Glob, Bash | 코드 검토, 테스트 실행 — **쓰기 권한 없음** |
-
-**동료 검토 루프:** Developer → QA 검증 → 실패 시 Manager가 Developer에게 피드백 라우팅 (최대 3회 수정 사이클).
-
-**SwarmConfig 타입:**
-
-```typescript
-interface SwarmConfig {
-  enabled: boolean;
-  agents: Record<string, {
-    description: string;
-    prompt: string;
-    tools?: string[];
-    model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
-    maxTurns?: number;
-  }>;
-  mainAgent?: string;
-}
-```
-
----
-
-## 5. 데이터 흐름
-
-```
-사용자 실행: claudebot run
-
-  1. loadConfig()
-     └─ claudebot.config.json 읽기
-     └─ CLI 플래그 병합 (우선 적용)
-     └─ Zod 스키마로 검증
-
-  2. parseTasks(config.tasksFile)
-     └─ 마크다운 파일을 줄 단위로 읽기
-     └─ 체크박스 정규식 매칭
-     └─ 인라인 태그 추출
-     └─ Task[] 반환 (대기 중인 것만)
-
-  3. 각 Task에 대해:
-     │
-     ├─ costTracker.isOverBudget() → true → 건너뜀으로 표시, 계속
-     │
-     ├─ executor.execute(task, config, logger)
-     │   ├─ [SDK] query(prompt, opts) → 비동기 제너레이터
-     │   │   ├─ 메시지: init → session_id
-     │   │   └─ 메시지: result → cost, duration, is_error
-     │   │
-     │   └─ [CLI] spawn('claude', args) → stdout 스트림
-     │       ├─ 줄: init JSON → session_id
-     │       └─ 줄: result JSON → cost, is_error
-     │
-     ├─ writer.updateTaskInFile(task, result)
-     │   ├─ 성공 → [ ] → [x]
-     │   └─ 실패 → [ ] → [!] + 주석
-     │
-     ├─ sessionManager.record(result)
-     │   └─ sessions.json에 추가
-     │
-     └─ costTracker.record(result.costUsd)
-
-  4. BotRunResult 요약 반환
-```
-
----
-
-## 6. 설정 레퍼런스
-
-전체 `claudebot.config.json` 필드 레퍼런스:
-
-| 필드 | 타입 | 기본값 | 설명 |
-|-------|------|---------|-------------|
-| `engine` | `"sdk" \| "cli"` | `"sdk"` | 실행 엔진 선택 |
-| `tasksFile` | string | `"docs/todo.md"` | 마크다운 태스크 파일 경로 |
-| `model` | string? | SDK 기본값 | Claude 모델 ID |
-| `permissionMode` | string | `"acceptEdits"` | Claude 도구 권한 모드 |
-| `maxBudgetPerTaskUsd` | number? | — | 태스크당 USD 한도 |
-| `maxTotalBudgetUsd` | number? | — | 전체 실행 USD 한도 |
-| `taskTimeoutMs` | number | `600000` | 태스크당 타임아웃 (10분) |
-| `maxRetries` | number | `2` | 최대 재시도 횟수 |
-| `stopOnFailure` | boolean | `false` | 첫 번째 실패 시 큐 중단 |
-| `sessionStorePath` | string | `".claudebot/sessions.json"` | 세션 기록 파일 |
-| `logLevel` | string | `"info"` | 로깅 상세도 |
-| `watchIntervalMs` | number | `20000` | 와치 모드 폴링 간격 (20초) |
-| `swarm` | object? | — | 멀티 에이전트 스웜 설정 |
-
----
-
-## 7. 구현 현황
-
-| 기능 | 상태 | 엔진 | 검증 |
-|---------|--------|--------|---------|
-| 태스크 큐 파싱 (체크박스 + 태그) | ✅ 작동 중 | 모두 | 태스크 10개 |
-| `query()`를 통한 SDK 실행 | ✅ 작동 중 | SDK | 태스크 2개, $0.11 |
-| `spawn('claude')`를 통한 CLI 실행 | ✅ 작동 중 | CLI | 태스크 8개, $0.59 |
-| 세션 영속성 (sessions.json) | ✅ 작동 중 | 모두 | 레코드 10개 |
-| 정확한 비용 추적 | ✅ 작동 중 | SDK 전용 | 예 |
-| 예산 집행 (태스크당 + 전체) | ✅ 작동 중 | 모두 | — |
-| 지수 백오프 재시도 | ✅ 작동 중 | 모두 | — |
-| 태스크당 타임아웃 (AbortController) | ✅ 작동 중 | 모두 | — |
-| 정상 SIGINT/SIGTERM 종료 | ✅ 작동 중 | 모두 | — |
-| 드라이런 모드 (파싱, 실행 안 함) | ✅ 작동 중 | 모두 | — |
-| 와치 모드 (큐 비어 있을 때 폴링) | ✅ 작동 중 | 모두 | — |
-| Zod 설정 검증 | ✅ 작동 중 | 모두 | — |
-| CLI `status` 명령어 | ✅ 작동 중 | 모두 | — |
-| 태스크 파일 쓰기 복귀 [x] / [!] | ✅ 작동 중 | 모두 | — |
-| 인라인 태그 파싱 ([budget], [turns]) | ✅ 작동 중 | 모두 | — |
-| 멀티 에이전트 스웜 (SDK 네이티브 정의) | 🔧 정의됨 | SDK 전용 | 미통합 |
-| BotGraph 멀티봇 파이프라인 (Phase 2) | ✅ 구현됨 | 모두 | `src/swarm/` 8개 파일 |
-| `claudebot swarm` CLI 명령어 | ✅ 작동 중 | 모두 | dry-run 지원 |
-| BotGraph config 검증 (Zod) | ✅ 작동 중 | 모두 | — |
-| InboxManager (canContact 강제) | ✅ 작동 중 | 모두 | — |
-| BulletinBoard (append-only 공유 로그) | ✅ 작동 중 | 모두 | — |
-| RegistryManager (작업 상태 머신, 파일 락) | ✅ 작동 중 | 모두 | — |
-| SwarmOrchestrator (N봇 병렬 실행) | ✅ 작동 중 | 모두 | — |
-| `claudebot status --swarm` | ✅ 작동 중 | 모두 | 봇별 비용 집계 |
-| EventBus (타입드 이벤트 시스템) | ✅ 작동 중 | 모두 | `src/events/` |
-| SwarmOrchestrator `addBot()`/`removeBot()` API | ✅ 작동 중 | 모두 | 동적 봇 생성/제거 |
-| WorkflowManager (4-Step 상태 머신) | ✅ 작동 중 | 모두 | `src/orchestrator/` |
-| Dashboard v2 WebSocket + ChatManager | ✅ 작동 중 | 모두 | `@fastify/websocket` |
-| 대화형 인터페이스 (WorkflowEngine) | ✅ 작동 중 | 모두 | 4-Step 워크플로우 UI |
-| Decision Card (승인/수정/거부) | ✅ 작동 중 | 모두 | Preview + Proposal |
-| HTML 결과 보고서 생성기 | ✅ 작동 중 | 모두 | `src/report/`, `/api/report` |
-| 토큰 수 분석 | 🔧 플레이스홀더 | SDK | — |
-| PoC 자동화 + 도메인 이탈 감지 | ❌ 미구현 | — | Phase 4.3 |
-| 병렬 태스크 실행 (단일봇 내) | ❌ 미계획 | — | 순차 실행만 |
-
----
-
-## 8. 알려진 한계
-
-1. **순차 실행만 가능** — 태스크는 하나씩 실행됩니다. 병렬 실행 없음.
-2. **CLI executor: 비용 추적 불가** — `costUsd`로 `-1`을 반환합니다. 예산 집행은 추정치 기반.
-3. **스웜 모드 미통합** — `src/agent/swarm.ts`에서 에이전트 설정을 정의하지만, `ClaudeBot.run()`은 아직 스웜 라우팅을 활성화하지 않습니다.
-4. **재시작 시 재개 불가** — 와치 모드는 재시작 시 메모리 내 태스크 상태를 초기화합니다. 세션 기록은 유지되지만, 진행 중인 태스크는 자동 재개되지 않습니다.
-5. **단일 태스크 파일** — 모든 태스크는 하나의 마크다운 파일에 있어야 합니다. 다중 파일 큐 미지원.
-
----
-
-## 9. 파일 구조
+## 3. 디렉토리 구조
 
 ```
 claude-bot/
-├── src/
-│   ├── index.ts              # CLI 진입점 (Commander)
-│   ├── bot.ts                # ClaudeBot 오케스트레이터
-│   ├── config.ts             # Zod 설정 로더
-│   ├── types.ts              # 핵심 타입 정의
-│   ├── logger/
-│   │   └── index.ts          # Pino 로거 팩토리
+├── src/                          # 공유 백엔드 코어
+│   ├── index.ts                  # Dashboard 런처 (child process spawn)
+│   ├── config.ts                 # Zod config 로더
+│   ├── types.ts                  # EngineType, TaskResult, SessionRecord, ClaudeBotConfig
 │   ├── engine/
-│   │   ├── types.ts          # IExecutor 인터페이스
-│   │   ├── factory.ts        # 엔진 팩토리 함수
-│   │   ├── sdk-executor.ts   # SDK 엔진 (주요)
-│   │   └── cli-executor.ts   # CLI 엔진 (폴백)
-│   ├── task/
-│   │   ├── parser.ts         # 마크다운 태스크 파서
-│   │   └── writer.ts         # 태스크 파일 업데이터
-│   ├── session/
-│   │   └── manager.ts        # 세션 영속성 관리
-│   ├── cost/
-│   │   └── tracker.ts        # 예산/비용 추적
-│   ├── agent/
-│   │   └── swarm.ts          # 멀티 에이전트 스웜 설정 (SDK 네이티브)
-│   ├── swarm/                # BotGraph 멀티봇 파이프라인 (Phase 2)
-│   │   ├── index.ts          # Barrel export
-│   │   ├── types.ts          # Zod 스키마 (BotDefinition, SwarmGraphConfig 등)
-│   │   ├── config-loader.ts  # claudebot.swarm.json 로더 + 유효성 검사
-│   │   ├── bot-factory.ts    # BotDefinition → ClaudeBotConfig 파생
-│   │   ├── orchestrator.ts   # SwarmOrchestrator (N봇 병렬, addBot/removeBot)
-│   │   ├── inbox.ts          # InboxManager (봇별 inbox, canContact 강제)
-│   │   ├── board.ts          # BulletinBoard (append-only 공유 로그)
-│   │   ├── registry.ts       # RegistryManager (작업 상태 머신, 파일 락)
-│   │   └── workspace.ts      # bootstrapWorkspace() (디렉토리 자동 생성)
-│   ├── events/               # Phase 4: 타입드 이벤트 시스템
-│   │   ├── index.ts          # Barrel export
-│   │   └── event-bus.ts      # SwarmEventBus (싱글톤, 타입 안전 이벤트)
-│   ├── orchestrator/         # Phase 4: 오케스트레이터 API
-│   │   ├── index.ts          # Barrel export
-│   │   ├── types.ts          # BotProposal, OutputPreview, DecisionCard 등
-│   │   └── workflow.ts       # WorkflowManager (4-Step 상태 머신)
-│   ├── report/               # Phase 4: HTML 결과 보고서
-│   │   ├── index.ts          # Barrel export (saveReport)
-│   │   └── generator.ts      # generateHtmlReport() (독립 HTML)
+│   │   ├── types.ts              # IExecutor, ExecuteOptions, ExecutorCallbacks
+│   │   ├── sdk-executor.ts       # SdkExecutor — Agent SDK 래퍼
+│   │   └── factory.ts            # createExecutor() → SdkExecutor
+│   ├── logger/index.ts           # console 기반 레벨 로거
 │   └── utils/
-│       ├── abort.ts          # AbortController 헬퍼
-│       └── retry.ts          # 지수 백오프 재시도
-├── dashboard/                # Phase 3/5: 웹 대시보드
+│       ├── abort.ts              # AbortController + timeout
+│       └── retry.ts              # withRetry (지수 백오프)
+│
+├── dashboard/                    # 풀스택 웹 앱
 │   ├── src/
-│   │   ├── shared/
-│   │   │   └── api-types.ts  # 공유 DTO 타입 (Chat, Workflow, Bot 등)
-│   │   ├── server/
-│   │   │   ├── index.ts      # Fastify 서버 진입점
-│   │   │   ├── services/
-│   │   │   │   ├── chat-manager.ts     # WebSocket + 채팅/워크플로우 상태 관리
-│   │   │   │   ├── workflow-engine.ts  # 4-Step 워크플로우 엔진 (핵심)
-│   │   │   │   ├── file-reader.ts      # 프로젝트 파일 읽기
-│   │   │   │   ├── task-parser.ts      # 태스크 파서
-│   │   │   │   └── watcher.ts          # 파일 시스템 감시
-│   │   │   └── routes/
-│   │   │       ├── chat.ts       # WebSocket + REST 채팅 라우트
-│   │   │       ├── project.ts    # 프로젝트 경로 관리
-│   │   │       ├── report.ts     # HTML 보고서 생성
-│   │   │       ├── sessions.ts   # 세션 조회
-│   │   │       ├── tasks.ts      # 태스크 조회
-│   │   │       ├── config.ts     # 설정 조회
-│   │   │       ├── events.ts     # SSE 이벤트 스트림
-│   │   │       └── summary.ts    # 요약 통계
-│   │   └── client/
-│   │       ├── App.tsx           # React 라우터 + 레이아웃
-│   │       ├── main.tsx          # 진입점 (ProjectProvider 래핑)
-│   │       ├── hooks/
-│   │       │   ├── useProject.tsx   # ProjectContext (전역 상태)
-│   │       │   ├── useWebSocket.ts  # WebSocket + 자동 재연결
-│   │       │   ├── useApi.ts        # REST API 훅
-│   │       │   └── useSSE.ts        # SSE 훅
-│   │       ├── pages/
-│   │       │   ├── ChatPage.tsx          # 대화형 인터페이스 (Phase 5)
-│   │       │   ├── DashboardPage.tsx     # 메인 대시보드
-│   │       │   ├── SessionsPage.tsx      # 세션 목록
-│   │       │   ├── TasksPage.tsx         # 태스크 뷰
-│   │       │   ├── ConfigPage.tsx        # 설정 뷰
-│   │       │   ├── AnalyticsPage.tsx     # 분석 뷰
-│   │       │   └── ProjectSelectPage.tsx # 프로젝트 선택
-│   │       └── components/
-│   │           ├── layout/
-│   │           │   ├── Layout.tsx    # 사이드바 + 메인 레이아웃
-│   │           │   └── Sidebar.tsx   # 네비게이션
-│   │           └── chat/             # Phase 5 채팅 컴포넌트
-│   │               ├── ChatTimeline.tsx   # 메시지 타임라인
-│   │               ├── ChatInput.tsx      # 입력창 (Shift+Enter)
-│   │               ├── WorkflowBar.tsx    # 5단계 진행 표시
-│   │               ├── DecisionCard.tsx   # 승인/수정/거부 UI
-│   │               └── BotStatusPanel.tsx # 봇 상태 패널
-│   ├── vite.config.ts        # Vite + WebSocket 프록시
-│   └── package.json
-├── examples/
-│   └── swarm-dev-team/       # 소프트웨어 개발팀 예시
-│       ├── claudebot.swarm.json
-│       └── prompts/          # coordinator.md, worker.md, reviewer.md
+│   │   ├── server/               # Fastify 백엔드
+│   │   │   ├── index.ts          # 서버 진입점, AppState, 라우트 등록
+│   │   │   ├── routes/           # 8개 API 라우트
+│   │   │   │   ├── chat.ts       # REST + WebSocket 채팅 API
+│   │   │   │   ├── project.ts    # 프로젝트 선택/조회
+│   │   │   │   ├── events.ts     # SSE 엔드포인트
+│   │   │   │   ├── sessions.ts   # 세션 기록 조회
+│   │   │   │   ├── summary.ts    # 대시보드 요약
+│   │   │   │   ├── config.ts     # 설정 조회
+│   │   │   │   ├── report.ts     # HTML 보고서 생성
+│   │   │   │   └── tasks.ts      # Task 목록 (stub)
+│   │   │   └── services/
+│   │   │       ├── workflow-engine.ts  # 5-Phase 상태 머신
+│   │   │       ├── chat-manager.ts    # 메시지 저장, WS 브로드캐스트
+│   │   │       ├── file-reader.ts     # AGENTS.md, docs/, config 읽기
+│   │   │       └── watcher.ts         # chokidar 파일 감시, SSE
+│   │   │
+│   │   ├── client/               # React SPA
+│   │   │   ├── main.tsx          # ReactDOM.createRoot
+│   │   │   ├── App.tsx           # Router + ProjectProvider
+│   │   │   ├── pages/            # 7개 페이지
+│   │   │   ├── hooks/            # useWebSocket, useSSE, useApi, useProject
+│   │   │   └── components/       # 10개 카테고리
+│   │   │
+│   │   └── shared/               # 서버/클라이언트 공유 타입
+│   │       ├── types.ts          # ClaudeBotConfig, SessionStore
+│   │       └── api-types.ts      # DTO, WSMessage, SSEEvent, WorkflowStep
+│   │
+│   ├── tsconfig.json             # client (bundler, jsx)
+│   └── tsconfig.server.json      # server (Node16)
+│
 ├── docs/
-│   ├── PRD.md                # 제품 요구사항
-│   ├── TechSpec.md           # 현재 문서
-│   ├── task-adv.md           # Adv 구현 계획서
-│   ├── botgraph-guide.md     # BotGraph 사용 가이드
-│   ├── claude-agent-sdk-guide.md  # Agent SDK 가이드
-│   ├── dashboard-plan.md     # Dashboard 설계 계획
-│   └── todo.md               # 기본 태스크 큐 파일
-├── tasks.md                  # 예시 태스크 큐
-├── claudebot.config.json     # 프로젝트 설정 (단일봇)
-├── claudebot.swarm.json      # 스웜 설정 (멀티봇, 선택)
-├── build.bat                 # 빌드 + 실행 배치 파일
-├── run.bat / swarm.bat / status.bat / dashboard.bat  # 실행 스크립트
-├── package.json
-├── tsconfig.json
-└── .claudebot/
-    ├── sessions.json         # 영속 세션 기록
-    └── chat.json             # 대시보드 채팅 상태 (자동 생성)
+│   ├── PRD.md
+│   ├── TechSpec.md               # ← 이 문서
+│   └── PRD-Preview.html          # 결과물 예측 Preview
+│
+├── tsconfig.json                 # root (Node16, src/ → dist/)
+└── package.json                  # ESM, scripts
 ```
+
+---
+
+## 4. 핵심 인터페이스 및 타입
+
+### 4.1 IExecutor — 봇 실행 인터페이스
+
+```typescript
+// src/engine/types.ts
+interface ExecutorCallbacks {
+  onCost?: (costUsd: number, sessionId: string) => void;
+  onProgress?: (event: string, data: unknown) => void;
+}
+
+interface ExecuteOptions {
+  prompt: string;
+  config: ClaudeBotConfig;
+  cwd?: string;
+  callbacks?: ExecutorCallbacks;
+}
+
+interface IExecutor {
+  execute(opts: ExecuteOptions): Promise<TaskResult>;
+}
+```
+
+### 4.2 TaskResult — 실행 결과
+
+```typescript
+// src/types.ts
+interface TaskResult {
+  success: boolean;
+  result: string;
+  costUsd: number;
+  durationMs: number;
+  sessionId: string;
+  errors: string[];
+}
+```
+
+### 4.3 ClaudeBotConfig — 설정 스키마
+
+```typescript
+// src/types.ts (Zod-validated in config.ts)
+interface ClaudeBotConfig {
+  model?: string;                    // default: 최신 Sonnet
+  cwd: string;                      // 프로젝트 루트 (필수)
+  permissionMode: string;           // default: 'acceptEdits'
+  maxBudgetPerTaskUsd?: number;     // 봇 당 예산
+  maxTurnsPerTask?: number;         // 봇 당 최대 턴
+  maxTotalBudgetUsd?: number;       // 전역 예산 한도
+  taskTimeoutMs: number;            // default: 600000 (10분)
+  logLevel: string;                 // default: 'info'
+  allowedTools?: string[];          // 봇 허용 도구 목록
+  systemPromptPrefix?: string;      // 봇 시스템 프롬프트 접두사
+  autoOnboarding?: boolean;         // Epic 자동 연속 실행 (Auto-Pilot)
+}
+```
+
+### 4.4 WorkflowStep — Phase 상태
+
+```typescript
+// dashboard/src/shared/api-types.ts
+type WorkflowStep =
+  | 'idle'
+  | 'onboarding'
+  | 'prediction'
+  | 'documentation'
+  | 'development'
+  | 'review'
+  | 'completed';
+```
+
+### 4.5 ChatMessageDTO — 채팅 메시지
+
+```typescript
+interface ChatMessageDTO {
+  id: string;             // 랜덤 8자 UUID
+  role: ChatRole;         // 'user' | 'orchestrator' | 'system' | 'bot'
+  botName?: string;       // role='bot' 일 때 봇 이름
+  content: string;        // 메시지 본문 (HTML 가능)
+  channel: string;        // 'main' | 'internal'
+  timestamp: string;      // ISO 8601
+  decision?: DecisionCardDTO;
+}
+
+type DecisionType = 'prediction' | 'documentation' | 'proposal' | 'review' | 'question';
+type DecisionStatus = 'pending' | 'approved' | 'rejected' | 'modified';
+
+interface DecisionCardDTO {
+  id: string;
+  type: DecisionType;
+  title: string;
+  description: string;
+  options: string[];
+  status: DecisionStatus;
+  response?: string;
+  createdAt: string;
+  resolvedAt?: string;
+}
+```
+
+### 4.6 WebSocket 프로토콜
+
+```typescript
+// Client → Server
+type WSClientMessage =
+  | { type: 'chat'; content: string }
+  | { type: 'decision'; decisionId: string; status: DecisionStatus; response?: string };
+
+// Server → Client
+type WSServerMessage =
+  | { type: 'chat'; message: ChatMessageDTO }
+  | { type: 'workflow'; workflow: WorkflowStateDTO }
+  | { type: 'bots'; bots: BotStatusDTO[] }
+  | { type: 'decision'; decision: DecisionCardDTO }
+  | { type: 'error'; message: string };
+```
+
+---
+
+## 5. 서비스 상세
+
+### 5.1 WorkflowEngine — 5-Phase 상태 머신
+
+**책임:** Phase 전환 관리, 사용자 메시지 라우팅, Decision Card 생성/처리
+
+```
+idle ──[initializeProject]──→ onboarding
+                                  │
+                    [Bot Team 승인 (Decision Card)]
+                                  │
+                                  ▼
+                             prediction
+                                  │
+                    [Output Preview 승인 (Decision Card)]
+                                  │
+                                  ▼
+                            documentation
+                                  │
+                    [문서 확인 후 채팅 승인]
+                                  │
+                                  ▼
+                            development
+                                  │
+                    [모든 Task 완료 or 사용자 종료]
+                                  │
+                                  ▼
+                              review
+                                  │
+                    [최종 결과 승인 (Decision Card)]
+                                  │
+                                  ▼
+                            completed
+```
+
+**주요 메서드:**
+
+| 메서드 | Phase | 설명 |
+| ------ | ----- | ---- |
+| `initializeProject(path)` | idle→onboarding | AGENTS.md, docs/ 읽기, 인사 메시지 전송 |
+| `handleUserMessage(content)` | 전체 | `workflow.step` switch로 phase별 핸들러 호출 |
+| `handleDecisionResolved(card)` | 전체 | `card.type` switch로 phase 전환 |
+| `generatePrediction()` | prediction | HTML Output Preview 생성, Decision Card 발행 |
+| `generateDocumentation()` | documentation | 문서 3종 생성, HTML 시각화 탭 표시 |
+| `startDevelopment()` | development | 봇 생성 및 실행 (현재 시뮬레이션) |
+| `startReview()` | review | 결과 검증, 보고서 Decision Card 발행 |
+
+**현재 상태:** 상태 머신 로직 완성. Phase 4의 실제 SdkExecutor 연동은 **미구현** (setTimeout 시뮬레이션).
+
+### 5.2 ChatManager — 메시지 및 상태 관리
+
+**책임:** 채팅 메시지 CRUD, WebSocket 브로드캐스트, Decision Card 관리, JSON 영속화
+
+**저장 구조:**
+
+```json
+// .claudebot/chat.json
+{
+  "version": 1,
+  "workflow": {
+    "step": "development",
+    "topic": "Stripe 결제",
+    "activeBots": [{ "name": "Developer Bot", "status": "working", ... }],
+    "decisions": [{ "id": "...", "type": "proposal", "status": "approved", ... }],
+    "startedAt": "2025-01-01T00:00:00Z"
+  },
+  "messages": [
+    { "id": "abc12345", "role": "orchestrator", "content": "안녕하세요!", ... }
+  ]
+}
+```
+
+**핵심 동작:**
+- 모든 메시지/상태 변경 시 `chat.json` 즉시 저장 (서버 재시작 후 복원)
+- WebSocket 클라이언트에 `WSServerMessage` 타입별 브로드캐스트
+- 초기 연결 시 최근 50개 메시지 + 현재 workflow 상태 전송
+
+### 5.3 SdkExecutor — Agent SDK 래퍼
+
+**책임:** `@anthropic-ai/claude-agent-sdk`의 `query()` 함수를 래핑하여 봇 실행
+
+**실행 흐름:**
+
+```
+1. AbortController 생성 (taskTimeoutMs)
+2. config → sdkOptions 매핑:
+   ├── maxTurnsPerTask → maxTurns
+   ├── maxBudgetPerTaskUsd → maxBudgetUsd
+   ├── model, permissionMode, allowedTools
+   └── systemPromptPrefix → prompt 앞에 prepend
+3. query({ prompt, options }) → async generator
+4. 이벤트 처리:
+   ├── system/init → sessionId 캡처
+   └── result → cost, duration, text 캡처
+5. TaskResult 반환 + callbacks.onCost() 호출
+6. AbortError → { success: false, result: 'Task timed out' }
+```
+
+**매핑 규칙:**
+
+| ClaudeBotConfig | Agent SDK Option | 비고 |
+| --------------- | ---------------- | ---- |
+| `model` | `model` | 직접 전달 |
+| `maxTurnsPerTask` | `maxTurns` | 이름 변경 |
+| `maxBudgetPerTaskUsd` | `maxBudgetUsd` | 이름 변경 |
+| `permissionMode` | `permissionMode` | `'bypassPermissions'` → `allowDangerouslySkipPermissions: true` |
+| `allowedTools` | `allowedTools` | 직접 전달 |
+| `systemPromptPrefix` | prompt prepend | `prefix + '\n\n' + prompt` |
+
+### 5.4 BotComposer — 봇 동적 생성 (미구현)
+
+**책임:** Phase별로 필요한 봇을 동적으로 생성하고 SdkExecutor를 통해 실행
+
+**설계:**
+
+```typescript
+// 구현 예정 — dashboard/src/server/services/bot-composer.ts
+interface BotSpec {
+  name: string;               // "Developer Bot", "Reviewer Bot"
+  role: string;               // 역할 설명
+  systemPrompt: string;       // 봇별 시스템 프롬프트
+  config: Partial<ClaudeBotConfig>;  // 봇별 설정 오버라이드
+  tasks: string[];            // 할당할 Task 목록
+}
+
+class BotComposer {
+  constructor(
+    private executor: IExecutor,
+    private chatManager: ChatManager,
+  ) {}
+
+  // Phase 1 합의 기반으로 봇 생성
+  createBotTeam(specs: BotSpec[]): Bot[];
+
+  // Phase 4 동적 추가
+  spawnBot(spec: BotSpec): Bot;
+
+  // 병렬 실행
+  executeParallel(bots: Bot[], tasks: Task[]): Promise<TaskResult[]>;
+}
+```
+
+**Hub-Spoke 통신 구현:**
+- 각 봇의 출력은 `ChatManager`를 통해 `channel: 'internal'`로 기록
+- ClaudeBot(WorkflowEngine)이 봇 출력을 해석하여 `channel: 'main'`에 사용자 메시지로 변환
+- 봇 간 메시지 전달: Reviewer → ClaudeBot → Developer (직접 통신 금지)
+
+---
+
+## 6. 통신 아키텍처
+
+### 6.1 이중 실시간 채널
+
+| 채널 | 프로토콜 | 용도 | 재연결 |
+| ---- | -------- | ---- | ------ |
+| 채팅 | WebSocket `ws://localhost:3001/api/chat/ws` | 메시지 송수신, 봇 상태, Decision Card | 지수 백오프 1s→30s |
+| 파일 감시 | SSE `GET /api/events` | config 변경, .claudebot/ 파일 변경 | 지수 백오프 1s→30s |
+
+### 6.2 REST API (WebSocket 폴백 + 초기 로드)
+
+| Method | Endpoint | 설명 |
+| ------ | -------- | ---- |
+| GET | `/api/chat/messages` | 전체 메시지 조회 |
+| GET | `/api/chat/workflow` | 현재 워크플로우 상태 |
+| GET | `/api/chat/decisions` | 미해결 Decision Card 목록 |
+| POST | `/api/chat/send` | 메시지 전송 (WS 폴백) |
+| POST | `/api/chat/decision` | Decision Card 응답 |
+| POST | `/api/chat/reset` | 채팅 + 워크플로우 초기화 |
+| GET | `/api/project` | 현재 프로젝트 정보 |
+| POST | `/api/project` | 프로젝트 설정 (폴더 선택) |
+| GET | `/api/events` | SSE 스트림 |
+| GET | `/api/sessions` | 세션 기록 |
+| GET | `/api/summary` | 대시보드 요약 |
+| GET | `/api/config` | 설정 조회 |
+| GET | `/api/report` | HTML 보고서 |
+| GET | `/api/tasks` | Task 목록 (현재 stub) |
+
+### 6.3 메시지 큐
+
+```typescript
+// WorkflowEngine 내부 구현 예정
+interface MessageQueue {
+  enqueue(msg: QueuedMessage): void;
+  process(): Promise<void>;
+}
+
+interface QueuedMessage {
+  priority: 1 | 2 | 3 | 4;  // P1:사용자 > P2:에러 > P3:완료 > P4:진행보고
+  source: string;             // 'user' | botName
+  content: string;
+  timestamp: string;
+}
+```
+
+**동작:** 사용자 메시지(P1) 도착 시 → 현재 처리 중인 봇 응답 큐에 대기 → 사용자 메시지 우선 처리 → 큐 순서대로 재개
+
+---
+
+## 7. 데이터 저장
+
+### 7.1 파일 기반 (DB 없음)
+
+| 파일 | 위치 | 내용 | 쓰기 주체 |
+| ---- | ---- | ---- | --------- |
+| `chat.json` | `.claudebot/` | 채팅 기록 + 워크플로우 상태 | ChatManager |
+| `sessions.json` | `.claudebot/` | 봇 실행 세션 기록 | BotComposer (미구현) |
+| `claudebot.config.json` | 프로젝트 루트 | 사용자 설정 | 사용자 수동 편집 |
+
+### 7.2 Config 스키마
+
+```json
+{
+  "maxTotalBudgetUsd": 5.0,
+  "autoOnboarding": false,
+  "model": "claude-sonnet-4-6"
+}
+```
+
+| 필드 | 타입 | 기본값 | 설명 |
+| ---- | ---- | ------ | ---- |
+| `maxTotalBudgetUsd` | number | `5.0` | 전역 예산 한도 (USD) |
+| `autoOnboarding` | boolean | `false` | Epic 자동 연속 실행 (Auto-Pilot) |
+| `model` | string | 최신 Sonnet | 봇 기본 모델 |
+| `permissionMode` | string | `"acceptEdits"` | Agent SDK 권한 모드 |
+| `maxBudgetPerTaskUsd` | number | — | 봇 당 예산 한도 |
+| `maxTurnsPerTask` | number | — | 봇 당 최대 턴 수 |
+| `taskTimeoutMs` | number | `600000` | 봇 실행 타임아웃 (ms) |
+
+---
+
+## 8. Phase별 기술 상세
+
+### 8.1 Phase 1: Onboarding
+
+```
+사용자가 프로젝트 폴더 선택
+    │
+    ▼
+WorkflowEngine.initializeProject(projectPath)
+    ├── fileReader.readAgentsMd()         → AGENTS.md 파싱
+    ├── fileReader.scanDocsFolder()       → docs/*.md (최대 10개)
+    ├── fileReader.readConfig()           → claudebot.config.json
+    ├── chatManager.addMessage('orchestrator', 인사메시지)
+    └── chatManager.setStep('onboarding')
+    │
+    ▼
+자유 대화 루프 (handleOnboardingChat)
+    ├── 사용자 메시지 → generateConversationalResponse()
+    ├── 진행 키워드 감지 → ['다음', 'next', '준비', 'ready', '진행', 'proceed']
+    └── Bot Team 제안 → Decision Card (type: 'proposal')
+    │
+    ▼
+사용자 승인 → handleProposalDecision() → setStep('prediction')
+```
+
+### 8.2 Phase 2: Prediction
+
+```
+generatePrediction()
+    ├── 온보딩 대화 컨텍스트 분석
+    ├── HTML Output Preview 생성
+    │   ├── ① 예상 아키텍처 다이어그램
+    │   ├── ② 사용자 관점 핵심 흐름
+    │   └── ③ 완료 기준 체크리스트
+    └── Decision Card (type: 'prediction') 발행
+    │
+    ▼
+사용자 승인 → handlePredictionDecision() → setStep('documentation')
+```
+
+**HTML Preview 렌더링:** ChatPage에서 Decision Card의 description 필드에 포함된 HTML을 `dangerouslySetInnerHTML` 또는 iframe sandbox로 렌더링.
+
+### 8.3 Phase 3: Documentation
+
+```
+generateDocumentation()
+    ├── Doc Writer Bot 생성 (BotComposer)
+    ├── 문서 3종 생성:
+    │   ├── docs/PRD-{topic}.md
+    │   ├── docs/TechSpec-{topic}.md
+    │   └── docs/Tasks-{topic}.md
+    ├── 생성된 문서를 HTML 탭으로 시각화
+    │   ├── PRD 탭: 사용자 스토리, 비기능 요구사항
+    │   ├── TechSpec 탭: API 엔드포인트, 스키마 변경
+    │   └── Tasks 탭: 실행 작업 체크리스트
+    └── 사용자에게 채팅으로 피드백/승인 요청
+    │
+    ▼
+사용자 채팅 승인 → setStep('development')
+```
+
+### 8.4 Phase 4: Development
+
+```
+startDevelopment()
+    ├── Bot Team 생성 (BotComposer.createBotTeam)
+    │   ├── Developer Bot × N (병렬 가능)
+    │   ├── Reviewer Bot (읽기 전용)
+    │   └── 필요시 동적 추가 (Tester Bot 등)
+    ├── Task 분배 및 병렬 실행
+    │   ├── 독립 Task → 동시 실행
+    │   └── 의존 Task → 순차 실행
+    ├── Hub-Spoke 통신
+    │   ├── 봇 출력 → ChatManager (internal channel)
+    │   ├── ClaudeBot 해석 → 사용자 메시지 (main channel)
+    │   └── Reviewer 피드백 → ClaudeBot → Developer 전달
+    ├── Goal Drift 감지
+    │   ├── 봇 출력의 파일 변경 범위 분석
+    │   └── Task 범위 이탈 시 경고 + 복귀
+    └── 진행 상황 → BotStatusDTO 브로드캐스트
+    │
+    ▼
+모든 Task 완료 → setStep('review')
+```
+
+**봇 실행 호출:**
+
+```typescript
+// BotComposer 내부 (구현 예정)
+const result = await this.executor.execute({
+  prompt: `${bot.systemPrompt}\n\n## Task\n${task.description}`,
+  config: {
+    ...projectConfig,
+    ...bot.config,   // 봇별 오버라이드
+    cwd: projectPath,
+  },
+  callbacks: {
+    onCost: (cost, sessionId) => {
+      this.chatManager.broadcastBots(this.getActiveBots());
+    },
+    onProgress: (event, data) => {
+      // 실시간 진행 상황 → internal channel
+    },
+  },
+});
+```
+
+### 8.5 Phase 5: Review
+
+```
+startReview()
+    ├── Review Bot 생성
+    ├── 결과 검증:
+    │   ├── 각 Task 완료 여부
+    │   ├── 코드 보안 검토
+    │   └── 목표 대비 달성도
+    ├── 결과 보고서 생성:
+    │   ├── 완료 작업 목록 + Pass/Fail
+    │   ├── 비용/시간 요약
+    │   ├── 코드 변경 파일 목록
+    │   └── 미완료 항목
+    └── Decision Card (type: 'review') 발행
+    │
+    ▼
+사용자 최종 승인 → setStep('completed')
+```
+
+### 8.6 Epic Cycle
+
+```
+completed 상태 진입
+    │
+    ▼
+코드베이스 재분석 (AGENTS.md, docs/, TODO 주석)
+    │
+    ▼
+다음 Epic 후보 3개 제안 (Decision Card)
+    │
+    ├── autoOnboarding: false → 수동 선택 대기
+    └── autoOnboarding: true  → #1 후보 자동 선정
+    │
+    ▼
+workflow 초기화 (epic 카운터 증가)
+    │
+    ▼
+setStep('onboarding') → 다음 사이클 시작
+    │
+    ▼
+반복 (잔여 예산 ≥ 예상 비용 AND 사용자 미중단)
+```
+
+---
+
+## 9. 프론트엔드 컴포넌트 구조
+
+### 9.1 페이지
+
+| 페이지 | 경로 | 상태 |
+| ------ | ---- | ---- |
+| ChatPage | `/chat` | ✅ 완성 (318줄) — 메인 UI |
+| DashboardPage | `/` | ✅ 완성 |
+| SessionsPage | `/sessions` | ✅ 완성 |
+| AnalyticsPage | `/analytics` | ✅ 완성 |
+| ConfigPage | `/config` | ✅ 완성 |
+| TasksPage | `/tasks` | ⬜ Stub |
+| ProjectSelectPage | `/project` | ✅ 완성 |
+
+### 9.2 ChatPage 상태 관리
+
+```typescript
+// ChatPage.tsx 내부 state
+const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
+const [workflow, setWorkflow] = useState<WorkflowStateDTO | null>(null);
+const [bots, setBots] = useState<BotStatusDTO[]>([]);
+const [pendingDecisions, setPendingDecisions] = useState<DecisionCardDTO[]>([]);
+const [notifications, setNotifications] = useState<Notification[]>([]);
+```
+
+**초기 로드:** `Promise.all([GET /chat/messages, GET /chat/workflow, GET /chat/decisions])`
+
+**실시간 업데이트:** `useWebSocket` → `onMessage` 콜백에서 `WSServerMessage.type` 별 분기 처리
+
+**Optimistic UI:** 사용자 메시지 전송 시 로컬 state에 즉시 추가 → WS/REST로 서버 전송
+
+### 9.3 핵심 컴포넌트
+
+| 컴포넌트 | 역할 |
+| -------- | ---- |
+| `WorkflowBar` | Phase 진행률 표시, Epic 카운터, Auto-Pilot 표시 |
+| `ChatTimeline` | 메시지 타임라인 렌더링 (orchestrator/user/bot/system) |
+| `DecisionCard` | 승인/수정/거절 버튼, HTML 프리뷰 |
+| `BotStatusPanel` | 활성 봇 목록 + 작업 요약 |
+| `ChatInput` | 메시지 입력, Enter 전송, Shift+Enter 줄바꿈 |
+| `NotificationToast` | 이벤트 알림 (봇 완료, 에러 등) |
+| `BudgetGauge` | 예산 게이지 (사용량/한도) |
+
+---
+
+## 10. 빌드 및 실행
+
+### 10.1 개발 모드
+
+```bash
+npm run dev
+# → concurrently:
+#   1. tsx watch dashboard/src/server/index.ts  (Fastify :3001)
+#   2. vite dev                                  (React :5173)
+```
+
+Vite dev server가 `/api/*` 요청을 Fastify로 프록시.
+
+### 10.2 프로덕션 빌드
+
+```bash
+npm run build
+# → 1. tsc (src/ → dist/)
+# → 2. vite build (client → dashboard/dist/client/)
+# → 3. tsc -p dashboard/tsconfig.server.json (server → dashboard/dist/)
+
+npm start
+# → node dashboard/dist/server/index.js
+# → Fastify가 static 미들웨어로 client 빌드 서빙
+```
+
+### 10.3 TypeScript 구성 (3개 독립 tsconfig)
+
+| tsconfig | 대상 | module | 특이사항 |
+| -------- | ---- | ------ | -------- |
+| `/tsconfig.json` | `src/` → `dist/` | Node16 | root 코어 |
+| `/dashboard/tsconfig.json` | `src/client/` + `src/shared/` | ESNext (bundler) | noEmit, jsx, `@shared/*` alias |
+| `/dashboard/tsconfig.server.json` | `src/server/` + `src/shared/` | Node16 | `dist/` 출력 |
+
+---
+
+## 11. 구현 현황 및 갭 분석
+
+| 영역 | 상태 | 갭 |
+| ---- | ---- | --- |
+| SdkExecutor | ✅ 완성 | — |
+| Config (Zod) | ✅ 완성 | `autoOnboarding` 필드 미반영 |
+| ChatManager | ✅ 완성 | — |
+| Watcher (SSE) | ✅ 완성 | — |
+| WorkflowEngine FSM | ✅ 완성 | Phase 4 실행이 setTimeout 시뮬레이션 |
+| REST + WebSocket API | ✅ 완성 | — |
+| ChatPage UI | ✅ 완성 | — |
+| **BotComposer** | ⬜ 미구현 | Phase 4 핵심 — 봇 동적 생성/실행 |
+| **MessageQueue** | ⬜ 미구현 | P1~P4 우선순위 큐 |
+| **Goal Drift 감지** | ⬜ 미구현 | 봇 출력 범위 분석 로직 |
+| **Epic Cycle** | ⬜ 미구현 | completed → 재분석 → 다음 Epic 선정 |
+| **sessions.json 쓰기** | ⬜ 미구현 | 비용/세션 기록 영속화 |
+| **HTML Preview 렌더링** | ⬜ 미구현 | Phase 2 HTML iframe/inline 렌더링 |
+| **TasksPage** | ⬜ Stub | 대화 기반 Task 추적 |
+| `withRetry` 연동 | ⬜ 미사용 | SDK 호출 재시도 미적용 |
+
+---
+
+## 12. 구현 우선순위 (로드맵 기준)
+
+| 순서 | 마일스톤 | 핵심 작업 | 의존성 |
+| ---- | -------- | --------- | ------ |
+| 1 | v0.3 | HTML Output Preview 렌더링 (Phase 2) | — |
+| 2 | v0.4 | BotComposer + SdkExecutor 연동 | v0.3 |
+| 3 | v0.5 | Phase 4 실제 봇 실행 + 병렬 처리 | v0.4 |
+| 4 | v0.5 | MessageQueue (P1~P4 우선순위) | v0.4 |
+| 5 | v0.6 | Phase 5 Review Bot + 보고서 | v0.5 |
+| 6 | v0.6 | Goal Drift 감지 | v0.5 |
+| 7 | v0.6 | sessions.json 영속화 + 비용 추적 | v0.5 |
+| 8 | v0.7 | Epic Cycle + Auto-Pilot | v0.6 |
+| 9 | v0.7 | config에 `autoOnboarding` Zod 필드 추가 | v0.7 |
+| 10 | v1.0 | 전체 통합 테스트 + 안정화 | v0.7 |

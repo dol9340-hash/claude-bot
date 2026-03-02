@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { SSEEventType } from '@shared/api-types';
 
 interface UseSSEOptions {
@@ -20,10 +20,11 @@ export function useSSE({ onEvent }: UseSSEOptions = {}) {
 
       const eventTypes: SSEEventType[] = [
         'connected',
-        'sessions_updated',
-        'tasks_updated',
         'config_updated',
         'heartbeat',
+        'chat_message',
+        'decision_update',
+        'workflow_update',
       ];
 
       for (const type of eventTypes) {

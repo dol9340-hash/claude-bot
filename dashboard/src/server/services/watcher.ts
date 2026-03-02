@@ -15,8 +15,7 @@ export class Watcher {
     this.stop();
 
     const patterns = [
-      path.join(projectPath, '.claudebot', 'sessions.json'),
-      path.join(projectPath, '**', 'todo.md'),
+      path.join(projectPath, '.claudebot', '**'),
       path.join(projectPath, 'claudebot.config.json'),
     ];
 
@@ -33,7 +32,6 @@ export class Watcher {
       this.handleFileChange(filePath as string);
     });
 
-    // Heartbeat every 30 seconds
     this.heartbeatInterval = setInterval(() => {
       this.broadcast('heartbeat');
     }, 30_000);
@@ -67,17 +65,13 @@ export class Watcher {
     const basename = path.basename(filePath);
     let eventType: SSEEventType;
 
-    if (basename === 'sessions.json') {
-      eventType = 'sessions_updated';
-    } else if (basename.endsWith('.md')) {
-      eventType = 'tasks_updated';
-    } else if (basename.includes('config')) {
+    if (basename.includes('config')) {
       eventType = 'config_updated';
     } else {
-      return;
+      // Any .claudebot/ file change triggers a generic update
+      eventType = 'workflow_update';
     }
 
-    // 500ms debounce per event type
     const existing = this.debounceTimers.get(eventType);
     if (existing) clearTimeout(existing);
 

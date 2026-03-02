@@ -1,33 +1,33 @@
 {
   "name": "claude-bot",
-  "version": "0.1.0",
-  "description": "Autonomous task queue orchestrator built on the Claude Agent SDK",
+  "version": "0.2.0",
+  "description": "Conversation-driven development orchestrator — Web Dashboard",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "claudebot": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit",
-    "dashboard": "cd dashboard && npm run dev",
-    "dashboard:build": "cd dashboard && npm run build"
+    "dev": "cd dashboard && npm run dev",
+    "build": "tsc && cd dashboard && npm run build",
+    "start": "cd dashboard && npm start",
+    "typecheck": "tsc --noEmit && cd dashboard && npm run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.62",
-    "commander": "^13.1.0",
-    "pino": "^9.6.0",
-    "pino-pretty": "^13.0.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18",
+    "ws": "^8.19.0"
   }
 }

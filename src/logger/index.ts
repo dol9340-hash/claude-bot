@@ -1,6 +1,13 @@
-import type { Logger } from 'pino';
+export interface Logger {
+  debug(obj: unknown, msg?: string): void;
+  info(obj: unknown, msg?: string): void;
+  warn(obj: unknown, msg?: string): void;
+  error(obj: unknown, msg?: string): void;
+  fatal(obj: unknown, msg?: string): void;
+  level: string;
+}
 
-/** Simple console-based logger that implements the pino Logger interface subset we use. */
+/** Simple console-based logger. */
 function log(level: string, obj: unknown, msg?: string) {
   const ts = new Date().toLocaleTimeString();
   if (typeof obj === 'string') {
@@ -23,5 +30,5 @@ export function createLogger(level: string = 'info'): Logger {
     error: minLevel <= 3 ? (obj: unknown, msg?: string) => log('ERROR', obj, msg) : noop,
     fatal: (obj: unknown, msg?: string) => log('FATAL', obj, msg),
     level,
-  } as unknown as Logger;
+  };
 }

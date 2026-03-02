@@ -1,19 +1,20 @@
-import type { TaskStatus } from '@shared/types';
-
-const statusConfig: Record<TaskStatus, { color: string; icon: string; label: string }> = {
-  completed: { color: 'var(--color-success)', icon: '✓', label: 'Completed' },
-  failed: { color: 'var(--color-danger)', icon: '✕', label: 'Failed' },
-  running: { color: 'var(--color-warning)', icon: '↻', label: 'Running' },
-  pending: { color: 'var(--color-info)', icon: '○', label: 'Pending' },
-  skipped: { color: '#6e7681', icon: '─', label: 'Skipped' },
+const statusConfig: Record<string, { color: string; icon: string; label: string }> = {
+  completed: { color: 'var(--color-success)', icon: '\u2713', label: 'Completed' },
+  failed: { color: 'var(--color-danger)', icon: '\u2715', label: 'Failed' },
+  running: { color: 'var(--color-warning)', icon: '\u21BB', label: 'Running' },
+  pending: { color: 'var(--color-info)', icon: '\u25CB', label: 'Pending' },
+  skipped: { color: '#6e7681', icon: '\u2500', label: 'Skipped' },
+  success: { color: 'var(--color-success)', icon: '\u2713', label: 'Success' },
 };
 
+const defaultStatus = { color: '#6e7681', icon: '?', label: 'Unknown' };
+
 interface StatusBadgeProps {
-  status: TaskStatus;
+  status: string;
 }
 
 export default function StatusBadge({ status }: StatusBadgeProps) {
-  const { color, icon, label } = statusConfig[status] ?? statusConfig.pending;
+  const { color, icon, label } = statusConfig[status] ?? defaultStatus;
 
   return (
     <span
