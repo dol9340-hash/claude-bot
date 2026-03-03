@@ -19,6 +19,9 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            dashboard/package-lock.json
 
       - name: Install root dependencies
         run: npm ci
@@ -32,3 +35,6 @@ jobs:
 
       - name: Test (CI suite)
         run: npm run test:ci
+
+      - name: Build
+        run: npm run build
