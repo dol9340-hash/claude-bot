@@ -27,6 +27,37 @@ export default function DecisionCard({ card, onResolve }: DecisionCardProps) {
     setActiveTab(0);
   }, [card.id, card.tabs?.length]);
 
+  const renderDescriptionWithLinks = (text: string) => {
+    const lines = text.split('\n');
+    const urlRegex = /(https?:\/\/[^\s<>()]+|\/api\/preview\/[a-zA-Z0-9._-]+)/g;
+
+    return lines.map((line, lineIdx) => {
+      const parts = line.split(urlRegex);
+      return (
+        <span key={`line-${lineIdx}`}>
+          {parts.map((part, idx) => {
+            if (!part) return null;
+            const isUrl = /^(https?:\/\/|\/api\/preview\/)/.test(part);
+            if (!isUrl) return <span key={`txt-${lineIdx}-${idx}`}>{part}</span>;
+
+            return (
+              <a
+                key={`url-${lineIdx}-${idx}`}
+                href={part}
+                target="_blank"
+                rel="noreferrer"
+                className="underline text-[var(--color-info)] break-all"
+              >
+                {part}
+              </a>
+            );
+          })}
+          {lineIdx < lines.length - 1 && <br />}
+        </span>
+      );
+    });
+  };
+
   return (
     <div
       className="bg-[var(--bg-surface)] border rounded-lg p-4"
@@ -44,7 +75,9 @@ export default function DecisionCard({ card, onResolve }: DecisionCardProps) {
             </span>
           </div>
           <h4 className="text-sm font-semibold text-[var(--text-primary)] mb-1">{card.title}</h4>
-          <p className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap mb-2">{card.description}</p>
+          <div className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap mb-2">
+            {renderDescriptionWithLinks(card.description)}
+          </div>
 
           {hasTabs && (
             <div className="mb-3">

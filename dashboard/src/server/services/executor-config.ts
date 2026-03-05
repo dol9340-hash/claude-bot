@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { ExecutorConfig } from './executor-types.js';
 import { readConfig } from './file-reader.js';
 
-const DEFAULT_TIMEOUT_MS = 180_000;
+const DEFAULT_TIMEOUT_MS = 600_000;
 const DEFAULT_MAX_TURNS = 24;
 const DEFAULT_RETRY_ON_MAX_TURNS = true;
 const DEFAULT_MAX_TURNS_RETRY_INCREMENT = 8;

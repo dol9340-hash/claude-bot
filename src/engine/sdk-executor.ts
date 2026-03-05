@@ -1,7 +1,26 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import type { TaskResult, ClaudeBotConfig } from '../types.js';
 import type { IExecutor, ExecuteOptions } from './types.js';
 import { createAbortController } from '../utils/abort.js';
+
+function resolveClaudeExecutable(): string | undefined {
+  if (process.platform !== 'win32') return undefined;
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, '.local', 'bin', 'claude.exe'),
+    path.join(home, 'AppData', 'Local', 'Programs', 'claude', 'claude.exe'),
+  ];
+  for (const c of candidates) {
+    try {
+      fs.accessSync(c);
+      return c;
+    } catch { /* not found, try next */ }
+  }
+  return undefined;
+}
 
 interface ErrorWithFields extends Error {
   code?: string | number;
@@ -96,7 +115,7 @@ export class SdkExecutor implements IExecutor {
   }
 
   async execute(options: ExecuteOptions): Promise<TaskResult> {
-    const { prompt, config, cwd, callbacks, abortSignal } = options;
+    const { prompt, config, cwd, callbacks, abortSignal, resumeSessionId } = options;
     const { controller, cleanup } = createAbortController(config.taskTimeoutMs);
     let abortedByUser = false;
     let removeExternalAbortListener = () => {};
@@ -122,6 +141,7 @@ export class SdkExecutor implements IExecutor {
     let durationMs = 0;
     let resultText = '';
     const errors: string[] = [];
+    let turnCount = 0;
     let lastProgressAt = 0;
     let lastProgressKey = '';
 
@@ -146,6 +166,11 @@ export class SdkExecutor implements IExecutor {
       permissionMode: config.permissionMode,
     };
 
+    const claudePath = resolveClaudeExecutable();
+    if (claudePath) {
+      sdkOptions.pathToClaudeCodeExecutable = claudePath;
+    }
+
     if (config.maxTurnsPerTask) sdkOptions.maxTurns = config.maxTurnsPerTask;
     if (config.maxBudgetPerTaskUsd) sdkOptions.maxBudgetUsd = config.maxBudgetPerTaskUsd;
     if (config.model) sdkOptions.model = config.model;
@@ -153,15 +178,28 @@ export class SdkExecutor implements IExecutor {
       sdkOptions.allowDangerouslySkipPermissions = true;
     }
     if (config.allowedTools) sdkOptions.allowedTools = config.allowedTools;
+    if (resumeSessionId) sdkOptions.resume = resumeSessionId;
 
     const fullPrompt = config.systemPromptPrefix
       ? `${config.systemPromptPrefix}\n\n${prompt}`
       : prompt;
 
     try {
+      console.log('[SDK] Starting query with options:', JSON.stringify({
+        maxTurns: sdkOptions.maxTurns,
+        maxBudgetUsd: sdkOptions.maxBudgetUsd,
+        permissionMode: sdkOptions.permissionMode,
+        allowedTools: sdkOptions.allowedTools,
+        cwd: sdkOptions.cwd,
+        pathToClaudeCodeExecutable: sdkOptions.pathToClaudeCodeExecutable,
+        resume: sdkOptions.resume ?? null,
+      }));
       const q = query({ prompt: fullPrompt, options: sdkOptions });
 
       for await (const msg of q) {
+        if (msg.type === 'assistant' || msg.type === 'user') turnCount++;
+        console.log('[SDK] msg:', msg.type, 'subtype' in msg ? (msg as Record<string, unknown>).subtype : '');
+
         if (msg.type === 'system' && 'subtype' in msg && msg.subtype === 'init') {
           sessionId = (msg as { session_id: string }).session_id;
         }
@@ -197,10 +235,14 @@ export class SdkExecutor implements IExecutor {
             session_id: string;
             result?: string;
             errors?: string[];
+            num_turns?: number;
           };
           costUsd = result.total_cost_usd;
           durationMs = result.duration_ms;
           sessionId = result.session_id;
+
+          const actualTurns = result.num_turns ?? turnCount;
+          console.log(`[SDK] turns_used=${actualTurns}/${sdkOptions.maxTurns ?? '?'} resumed=${resumeSessionId ? 'yes' : 'no'} cost=$${costUsd.toFixed(4)} duration=${Math.round(durationMs / 1000)}s`);
 
           if (result.subtype === 'success') {
             resultText = result.result ?? '';

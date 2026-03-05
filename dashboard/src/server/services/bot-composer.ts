@@ -133,7 +133,7 @@ export class BotComposer {
 
   // ─── Bot Execution ────────────────────────────────────────────────────
 
-  async executeBot(bot: Bot, task: string): Promise<BotTaskResult> {
+  async executeBot(bot: Bot, task: string, resumeSessionId?: string): Promise<BotTaskResult> {
     if (!this.baseConfig) {
       throw new Error('Base config not set. Call setBaseConfig() first.');
     }
@@ -143,6 +143,9 @@ export class BotComposer {
     }
 
     bot.status.status = 'working';
+    bot.status.currentTask = task.length > 200 ? `${task.substring(0, 200)}…` : task;
+    bot.status.taskStartedAt = new Date().toISOString();
+    bot.status.lastProgressMessage = undefined;
     const controller = new AbortController();
     bot.abortController = controller;
     this.broadcastBotStatus();
@@ -164,6 +167,7 @@ export class BotComposer {
       prompt: string,
       attemptConfig: ExecutorConfig,
       attemptLabel: 'initial' | 'retry',
+      sessionToResume?: string,
     ): Promise<TaskResult> => {
       let reportedCost = 0;
 
@@ -172,6 +176,7 @@ export class BotComposer {
         config: attemptConfig,
         cwd: this.baseConfig!.cwd,
         abortSignal: controller.signal,
+        resumeSessionId: attemptLabel === 'initial' ? sessionToResume : undefined,
         callbacks: {
           onCost: (costUsd, _sessionId) => {
             const safeCost = Number.isFinite(costUsd) ? Math.max(0, costUsd) : 0;
@@ -187,7 +192,12 @@ export class BotComposer {
           },
           onProgress: (message) => {
             const prefix = attemptLabel === 'retry' ? '(재시도) ' : '';
-            this.chat.addMessage('bot', `[${bot.spec.name}] ${prefix}${message}`, {
+            const fullMessage = `${prefix}${message}`;
+            bot.status.lastProgressMessage = fullMessage.length > 150
+              ? `${fullMessage.substring(0, 150)}…`
+              : fullMessage;
+            this.broadcastBotStatus();
+            this.chat.addMessage('bot', `[${bot.spec.name}] ${fullMessage}`, {
               botName: bot.spec.name,
               channel: 'internal',
             });
@@ -207,7 +217,7 @@ export class BotComposer {
     };
 
     try {
-      let result = await executeAttempt(task, config, 'initial');
+      let result = await executeAttempt(task, config, 'initial', resumeSessionId);
 
       const retryEnabled = config.retryOnMaxTurns ?? true;
       if (retryEnabled && this.shouldRetryForMaxTurns(result) && !this.isAbortFailure(result)) {
@@ -250,6 +260,8 @@ export class BotComposer {
         bot.status.tasksFailed++;
         bot.status.status = 'error';
       }
+      bot.status.currentTask = undefined;
+      bot.status.taskStartedAt = undefined;
 
       this.broadcastBotStatus();
 
@@ -303,9 +315,16 @@ export class BotComposer {
    */
   async executeBotTasks(bot: Bot): Promise<BotTaskResult[]> {
     const results: BotTaskResult[] = [];
-    for (const task of bot.spec.tasks) {
+    const totalTasks = bot.spec.tasks.length;
+    bot.status.totalTasks = totalTasks;
+    let previousSessionId: string | undefined;
+
+    for (let i = 0; i < totalTasks; i++) {
       if (this.abortRequested) break;
-      const result = await this.executeBot(bot, task);
+      bot.status.currentTaskIndex = i + 1;
+      const task = bot.spec.tasks[i];
+      const result = await this.executeBot(bot, task, previousSessionId);
+      previousSessionId = result.sessionId || undefined;
       results.push(result);
       if (!result.success) break; // Stop on first failure
     }
@@ -315,6 +334,9 @@ export class BotComposer {
     } else {
       bot.status.status = results.every(r => r.success) ? 'idle' : 'error';
     }
+    bot.status.currentTaskIndex = undefined;
+    bot.status.totalTasks = undefined;
+    bot.status.lastProgressMessage = undefined;
     this.broadcastBotStatus();
     return results;
   }

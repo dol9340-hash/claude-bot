@@ -1,4 +1,4 @@
-# Server CLAUDE.md
+# Server AGENTS.md
 
 Fastify 5 백엔드 — 워크플로우 엔진, 채팅 관리, 파일 감시 서비스.
 

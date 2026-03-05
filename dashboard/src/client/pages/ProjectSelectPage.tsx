@@ -12,7 +12,7 @@ export default function ProjectSelectPage() {
     try {
       setError(null);
       await setProject(path);
-      navigate('/');
+      navigate('/chat');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set project');
     }

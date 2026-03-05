@@ -74,11 +74,14 @@ export const chatRoute: FastifyPluginAsync = async (app) => {
 
   // REST: reset workflow
   app.post('/chat/reset', async (_req, reply) => {
-    const { chatManager, botComposer, messageQueue } = app.appState;
+    const { projectPath, chatManager, botComposer, messageQueue } = app.appState;
     botComposer.reset();
     messageQueue.clear();
     chatManager.reset();
     engine.reset();
+    if (projectPath) {
+      engine.initializeProject(projectPath);
+    }
     return reply.send({ ok: true });
   });
 

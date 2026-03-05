@@ -8,11 +8,11 @@ echo.
 
 :: Dependencies
 if not exist node_modules (
-    echo [1/3] npm install (root)...
+    echo [1/3] npm install ^(root^)...
     call npm install --silent || goto :err
 )
 if not exist dashboard\node_modules (
-    echo [1/3] npm install (dashboard)...
+    echo [1/3] npm install ^(dashboard^)...
     pushd dashboard
     call npm install --silent
     if errorlevel 1 (

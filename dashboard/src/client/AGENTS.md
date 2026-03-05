@@ -1,4 +1,4 @@
-# Client CLAUDE.md
+# Client AGENTS.md
 
 React 19 SPA — Vite + Tailwind CSS 4.
 
@@ -25,7 +25,7 @@ ChatPage (메인 UI), DashboardPage, SessionsPage, TasksPage, AnalyticsPage, Con
 
 ## Component Structure
 
-```
+```text
 components/
 ├── analytics/   # 차트 4개 (Cost, Duration, EngineSplit, CostPerTask)
 ├── chat/        # ChatInput, ChatTimeline, DecisionCard, WorkflowBar, BotStatusPanel, NotificationToast, ChatSearchBar

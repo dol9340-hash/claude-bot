@@ -1,4 +1,4 @@
-# Engine CLAUDE.md
+# Engine AGENTS.md
 
 IExecutor 추상화 + SDK 전용 구현.
 

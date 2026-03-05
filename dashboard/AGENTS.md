@@ -1,4 +1,4 @@
-# Dashboard CLAUDE.md
+# Dashboard AGENTS.md
 
 Fastify 5 서버 + React 19 SPA (Vite + Tailwind CSS 4) 풀스택 웹 앱.
 
@@ -33,7 +33,7 @@ npm run build:server  # tsc server build (tsconfig.server.json)
 - Fastify: 3001 (env `PORT`로 오버라이드 가능)
 - Vite dev: 5173
 
-## Sub-module CLAUDE.md
+## Sub-module AGENTS.md
 
-- `src/server/CLAUDE.md` — 서버 라우트, 서비스, 통신 프로토콜
-- `src/client/CLAUDE.md` — React 패턴, hooks, 컴포넌트 구조
+- `src/server/AGENTS.md` — 서버 라우트, 서비스, 통신 프로토콜
+- `src/client/AGENTS.md` — React 패턴, hooks, 컴포넌트 구조

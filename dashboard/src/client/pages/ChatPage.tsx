@@ -16,12 +16,45 @@ import DecisionCard from '../components/chat/DecisionCard';
 import NotificationToast, { type Notification } from '../components/chat/NotificationToast';
 
 type ChannelTab = 'all' | 'main' | 'internal';
+type BusyStep = 'prediction' | 'documentation';
+
+function isAwaitingAssistant(messages: ChatMessageDTO[]): boolean {
+  if (messages.length === 0) return false;
+  const last = messages[messages.length - 1];
+  return last.role === 'user';
+}
+
+function isBusyStep(step?: WorkflowStateDTO['step']): step is BusyStep {
+  return step === 'prediction' || step === 'documentation';
+}
+
+function hasPendingDecision(state: WorkflowStateDTO | null): boolean {
+  if (!state?.decisions) return false;
+  return state.decisions.some((d) => d.status === 'pending');
+}
+
+function deriveThinking(messages: ChatMessageDTO[], workflow: WorkflowStateDTO | null): boolean {
+  // Decision is available -> user should review, no thinking indicator.
+  if (hasPendingDecision(workflow)) return false;
+
+  // Prediction/Documentation can take long time after "생성 시작" message.
+  if (isBusyStep(workflow?.step)) {
+    const last = messages[messages.length - 1];
+    if (!last) return false;
+    return last.role === 'user' || last.role === 'orchestrator';
+  }
+
+  return isAwaitingAssistant(messages);
+}
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessageDTO[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowStateDTO | null>(null);
   const [bots, setBots] = useState<BotStatusDTO[]>([]);
   const [pendingDecisions, setPendingDecisions] = useState<DecisionCardDTO[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  const workflowRef = useRef<WorkflowStateDTO | null>(null);
+  const messagesRef = useRef<ChatMessageDTO[]>([]);
 
   // Phase 5.3: Channel tabs
   const [activeChannel, setActiveChannel] = useState<ChannelTab>('all');
@@ -79,7 +112,10 @@ export default function ChatPage() {
       case 'chat':
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.message.id)) return prev;
-          return [...prev, msg.message];
+          const next = [...prev, msg.message];
+          messagesRef.current = next;
+          setIsThinking(deriveThinking(next, workflowRef.current));
+          return next;
         });
         // Tab notification for non-visible tab
         if (!isVisibleRef.current) {
@@ -88,6 +124,8 @@ export default function ChatPage() {
         break;
       case 'workflow':
         setWorkflow(msg.state);
+        workflowRef.current = msg.state;
+        setIsThinking(deriveThinking(messagesRef.current, msg.state));
         if (msg.state.decisions) {
           setPendingDecisions(msg.state.decisions.filter((d) => d.status === 'pending'));
         }
@@ -96,24 +134,44 @@ export default function ChatPage() {
         setBots(msg.bots);
         break;
       case 'decision':
-        setPendingDecisions((prev) => {
-          if (msg.card.status !== 'pending') {
-            return prev.filter((d) => d.id !== msg.card.id);
+        {
+          const current = workflowRef.current;
+          if (current) {
+            const decisions = [...(current.decisions ?? [])];
+            const idx = decisions.findIndex((d) => d.id === msg.card.id);
+            if (idx >= 0) {
+              decisions[idx] = msg.card;
+            } else {
+              decisions.push(msg.card);
+            }
+            const nextWorkflow: WorkflowStateDTO = { ...current, decisions };
+            workflowRef.current = nextWorkflow;
+            setWorkflow(nextWorkflow);
+            setPendingDecisions(decisions.filter((d) => d.status === 'pending'));
+            setIsThinking(deriveThinking(messagesRef.current, nextWorkflow));
+          } else {
+            setIsThinking(false);
+            setPendingDecisions((prev) => {
+              if (msg.card.status !== 'pending') {
+                return prev.filter((d) => d.id !== msg.card.id);
+              }
+              const idx = prev.findIndex((d) => d.id === msg.card.id);
+              if (idx >= 0) {
+                const updated = [...prev];
+                updated[idx] = msg.card;
+                return updated;
+              }
+              return [...prev, msg.card];
+            });
           }
-          const idx = prev.findIndex((d) => d.id === msg.card.id);
-          if (idx >= 0) {
-            const updated = [...prev];
-            updated[idx] = msg.card;
-            return updated;
-          }
-          return [...prev, msg.card];
-        });
+        }
         // Notification for new decisions
         if (msg.card.status === 'pending') {
           addNotification('important', 'Decision Required', msg.card.title);
         }
         break;
       case 'error':
+        setIsThinking(false);
         addNotification('critical', 'Error', msg.message);
         break;
     }
@@ -129,11 +187,21 @@ export default function ChatPage() {
         fetch('/api/chat/messages'),
         fetch('/api/chat/workflow'),
       ]);
-      if (msgRes.ok) setMessages(await msgRes.json());
+      let latestMessages = messagesRef.current;
+      if (msgRes.ok) {
+        const msgs: ChatMessageDTO[] = await msgRes.json();
+        latestMessages = msgs;
+        messagesRef.current = msgs;
+        setMessages(msgs);
+      }
       if (wfRes.ok) {
         const wf: WorkflowStateDTO = await wfRes.json();
         setWorkflow(wf);
+        workflowRef.current = wf;
+        setIsThinking(deriveThinking(latestMessages, wf));
         setPendingDecisions(wf.decisions?.filter((d) => d.status === 'pending') ?? []);
+      } else {
+        setIsThinking(deriveThinking(latestMessages, workflowRef.current));
       }
     } catch { /* swallow */ }
   }, []);
@@ -141,6 +209,7 @@ export default function ChatPage() {
   // Send message — WS first, REST fallback for reliability
   const handleSend = useCallback(
     async (content: string) => {
+      setIsThinking(true);
       const sentViaWs = connected && send({ type: 'chat', content });
       if (sentViaWs) return;
 
@@ -152,6 +221,7 @@ export default function ChatPage() {
         });
         await refreshFromRest();
       } catch {
+        setIsThinking(false);
         // swallow
       }
     },
@@ -189,13 +259,22 @@ export default function ChatPage() {
           fetch('/api/chat/decisions'),
         ]);
         if (cancelled) return;
-        if (msgRes.ok) setMessages(await msgRes.json());
+        if (msgRes.ok) {
+          const msgs: ChatMessageDTO[] = await msgRes.json();
+          messagesRef.current = msgs;
+          setMessages(msgs);
+        }
+        const latestMessages = msgRes.ok ? messagesRef.current : [];
         if (wfRes.ok) {
           const wf: WorkflowStateDTO = await wfRes.json();
           setWorkflow(wf);
+          workflowRef.current = wf;
+          setIsThinking(deriveThinking(latestMessages, wf));
           if (wf.decisions) {
             setPendingDecisions(wf.decisions.filter((d) => d.status === 'pending'));
           }
+        } else {
+          setIsThinking(deriveThinking(latestMessages, workflowRef.current));
         }
         if (decRes.ok) {
           const decs: DecisionCardDTO[] = await decRes.json();
@@ -206,17 +285,28 @@ export default function ChatPage() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    workflowRef.current = workflow;
+  }, [workflow]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   // Reset workflow
   const handleReset = useCallback(async () => {
     try {
       await fetch('/api/chat/reset', { method: 'POST' });
       setMessages([]);
+      messagesRef.current = [];
       setWorkflow(null);
+      workflowRef.current = null;
       setPendingDecisions([]);
       setBots([]);
       setSearchQuery('');
       setFilterBot('');
       setActiveChannel('all');
+      setIsThinking(false);
     } catch { /* swallow */ }
   }, []);
 
@@ -257,7 +347,13 @@ export default function ChatPage() {
       {/* Notifications */}
       <NotificationToast notifications={notifications} onDismiss={dismissNotification} />
 
-      <WorkflowBar workflow={workflow} connected={connected} onReset={handleReset} onToggleAutoPilot={handleToggleAutoPilot} />
+      <WorkflowBar
+        workflow={workflow}
+        connected={connected}
+        isThinking={isThinking}
+        onReset={handleReset}
+        onToggleAutoPilot={handleToggleAutoPilot}
+      />
 
       <div className="flex-1 flex gap-4 min-h-0 mt-4">
         <div className="flex-1 flex flex-col min-w-0">
@@ -306,6 +402,7 @@ export default function ChatPage() {
               channel={activeChannel}
               searchQuery={searchQuery}
               filterBot={filterBot}
+              isThinking={isThinking}
             />
           </div>
 

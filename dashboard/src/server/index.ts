@@ -15,6 +15,7 @@ import { eventsRoute } from './routes/events.js';
 import { chatRoute } from './routes/chat.js';
 import { reportRoute } from './routes/report.js';
 import { healthRoute } from './routes/health.js';
+import { previewRoute } from './routes/preview.js';
 import { Watcher } from './services/watcher.js';
 import { ChatManager } from './services/chat-manager.js';
 import { WorkflowEngine } from './services/workflow-engine.js';
@@ -59,6 +60,18 @@ export interface AppState {
   sessionManager: SessionManager;
 }
 
+async function loadExecutor(): Promise<IExecutor> {
+  try {
+    // Use variable to prevent tsc from resolving the external module and shifting rootDir.
+    const sdkPath = '../../../src/engine/sdk-executor.js';
+    const mod = await import(sdkPath);
+    return new mod.SdkExecutor() as IExecutor;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`SDK executor load failed: ${message}`);
+  }
+}
+
 async function main() {
   const { project, port, open } = parseArgs();
 
@@ -66,26 +79,14 @@ async function main() {
 
   const watcher = new Watcher();
   const chatManager = new ChatManager();
-
-  // Dynamic import to avoid rootDir boundary violation
-  let executor: IExecutor;
-  try {
-    const { SdkExecutor } = await import('../../../src/engine/sdk-executor.js');
-    executor = new SdkExecutor();
-  } catch {
-    // Fallback stub executor for when SDK is not available
-    executor = {
-      async execute() {
-        return { success: false, result: 'SDK not available', costUsd: 0, durationMs: 0, sessionId: '', errors: ['SDK not loaded'] };
-      },
-    };
-  }
+  const executor = await loadExecutor();
 
   const botComposer = new BotComposer(executor, chatManager);
   const messageQueue = new MessageQueue();
   const sessionManager = new SessionManager();
 
   const workflowEngine = new WorkflowEngine(chatManager);
+  workflowEngine.setExecutor(executor);
   workflowEngine.setBotComposer(botComposer);
   workflowEngine.setMessageQueue(messageQueue);
   workflowEngine.setSessionManager(sessionManager);
@@ -121,6 +122,7 @@ async function main() {
   await app.register(chatRoute, { prefix: '/api' });
   await app.register(reportRoute, { prefix: '/api' });
   await app.register(healthRoute, { prefix: '/api' });
+  await app.register(previewRoute, { prefix: '/api' });
 
   // Serve static client files if built (works in both dev and prod)
   const clientDir = path.join(__dirname, '..', 'client');

@@ -32,7 +32,11 @@ export const projectRoute: FastifyPluginAsync = async (app) => {
     app.appState.sessionManager.setProjectPath(resolved);
     app.appState.botComposer.setBaseConfig(buildExecutorConfig(resolved));
 
-    // Proactive initialization: read AGENTS.md + docs/, greet user
+    // Start flow should restart from a clean onboarding state on project selection.
+    app.appState.messageQueue.clear();
+    app.appState.botComposer.reset();
+    app.appState.chatManager.reset();
+    app.appState.workflowEngine?.reset();
     app.appState.workflowEngine?.initializeProject(resolved);
 
     return reply.send(info);

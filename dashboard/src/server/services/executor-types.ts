@@ -23,6 +23,7 @@ export interface ExecuteOptions {
   cwd?: string;
   abortSignal?: AbortSignal;
   callbacks?: ExecutorCallbacks;
+  resumeSessionId?: string;
 }
 
 export interface ExecutorConfig {

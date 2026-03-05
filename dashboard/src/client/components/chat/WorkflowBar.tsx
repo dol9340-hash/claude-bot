@@ -3,6 +3,7 @@ import type { WorkflowStateDTO, WorkflowStep } from '@shared/api-types';
 interface WorkflowBarProps {
   workflow: WorkflowStateDTO | null;
   connected: boolean;
+  isThinking?: boolean;
   onReset?: () => void;
   onToggleAutoPilot?: (enabled: boolean) => void;
 }
@@ -26,17 +27,29 @@ const stepOrder: Record<WorkflowStep, number> = {
   completed: 5,
 };
 
-export default function WorkflowBar({ workflow, connected, onReset, onToggleAutoPilot }: WorkflowBarProps) {
+export default function WorkflowBar({
+  workflow,
+  connected,
+  isThinking = false,
+  onReset,
+  onToggleAutoPilot,
+}: WorkflowBarProps) {
   const currentStep = workflow?.step ?? 'idle';
   const currentIdx = stepOrder[currentStep];
   const epicNumber = workflow?.epicNumber ?? 0;
   const isAutoPilot = workflow?.autoOnboarding ?? false;
+  const onboardingInProgress = currentStep === 'onboarding' && isThinking;
 
   return (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-default)] rounded-lg px-4 py-3">
       <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold text-[var(--text-primary)]">Workflow</h2>
+          {onboardingInProgress && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[var(--color-info)] bg-opacity-20 text-[var(--color-info)] animate-pulse">
+              Onboarding 진행중
+            </span>
+          )}
           {epicNumber > 0 && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--color-sdk)] bg-opacity-20 text-[var(--color-sdk)]">
               Epic #{epicNumber}
@@ -54,7 +67,7 @@ export default function WorkflowBar({ workflow, connected, onReset, onToggleAuto
               onClick={() => onToggleAutoPilot(!isAutoPilot)}
               className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
                 isAutoPilot
-                  ? 'bg-[var(--color-success)] bg-opacity-20 text-[var(--color-success)]'
+                  ? 'bg-[var(--color-success)] text-white'
                   : 'text-[var(--text-muted)] bg-[var(--bg-overlay)] hover:bg-[var(--border-default)]'
               }`}
               title={isAutoPilot ? 'Auto-Pilot ON' : 'Auto-Pilot OFF'}
@@ -104,7 +117,9 @@ export default function WorkflowBar({ workflow, connected, onReset, onToggleAuto
           return (
             <div key={step.key} className="flex items-center flex-1">
               <div
-                className="flex-1 text-center py-1 px-2 rounded text-xs font-medium transition-colors"
+                className={`flex-1 text-center py-1 px-2 rounded text-xs font-medium transition-colors ${
+                  onboardingInProgress && isActive ? 'animate-pulse' : ''
+                }`}
                 style={{
                   backgroundColor: bgColor,
                   color: textColor,

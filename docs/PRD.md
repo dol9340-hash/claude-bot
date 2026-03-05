@@ -42,6 +42,7 @@ ClaudeBot 주도적 인사 메시지 전송
     │
     ▼
 Phase 1 (Onboarding) 자동 진입 → 사용자와 자유 대화
+    └── Dashboard에 Onboarding 상태 표시 (Thinking / In Progress / Ready)
 ```
 
 **핵심:** 사용자가 폴더만 선택하면 ClaudeBot이 먼저 말을 걸어 대화를 시작합니다.
@@ -82,6 +83,7 @@ Phase 1 (Onboarding) 자동 진입 → 사용자와 자유 대화
 - 프로젝트 구조와 기존 코드 분석
 - 질문을 통해 사용자의 의도 파악
 - 기술 스택, 제약사항, 우선순위 확인
+- **진행 상태 가시화** — Onboarding 중 Dashboard에서 `Thinking`/`In Progress` 상태를 실시간으로 표시
 - **Bot Team 제안** — 목표 분석 후 필요한 봇 구성을 Decision Card로 제시
 
 **Bot Team 제안 프로세스:**
@@ -110,22 +112,25 @@ ClaudeBot이 Bot Team 제안 (Decision Card)
 
 ### Phase 2: 목표 예측 (Goal Prediction)
 
-**목적:** 대화에서 수집한 정보로 개발 결과물을 미리 예상하고, HTML로 시각화하여 사용자가 직관적으로 확인
+**목적:** 대화에서 수집한 정보로 개발 결과물을 미리 예상하고, **외부 브라우저에서 열 수 있는 실제 HTML artifact**로 시각화하여 검토
 
 **ClaudeBot의 역할:**
 - 온보딩 대화 분석
 - 코드베이스 탐색 (필요시 Research Bot 생성)
-- **HTML Output Preview** 생성 — 최종 결과물을 시각적으로 표현:
-  - ① **최종 결과물 형태** — 예상 파일 구조, 컴포넌트 트리, 아키텍처 다이어그램
-  - ② **사용자 관점 핵심 흐름** — UI 와이어프레임, 인터랙션 흐름, API 엔드포인트 맵
-  - ③ **완료 기준** — 체크리스트, 예상 비용/시간, 기술 결정 사항
+- **Opus(최상위 모델) 기반 Output Preview Artifact** 생성:
+  - ① **예상 최종 UI/UX** — 실제 화면 레이아웃/정보 구조를 포함한 시각화 HTML
+  - ② **아키텍처 시각화** — 컴포넌트/서비스 관계도
+  - ③ **DFD(Data Flow Diagram)** — 외부 엔티티, 프로세스, 데이터 저장소 흐름
+  - ④ **사용 시나리오** — 주요 사용자 여정과 예외 흐름
+  - ⑤ **완료 기준/범위** — 체크리스트, 기술 결정, 예상 비용/시간
 
-**Preview 형식:** 인라인 HTML (채팅 내 iframe 또는 별도 패널로 렌더링). 코드 블록이 아닌 시각적 HTML로 인지 부담 최소화.
+**Preview 형식:** 인라인 렌더링이 아닌 **링크 기반 외부 Preview**.  
+채팅/Decision Card에는 Preview URL만 제시하고, 사용자는 별도 브라우저 탭에서 artifact를 열어 검토.
 
-**전환 조건:** 사용자가 HTML Output Preview를 승인 (Decision Card)
+**전환 조건:** 사용자가 외부 Output Preview Artifact를 확인 후 승인 (Decision Card)
 
 **입력:** Phase 1 대화 컨텍스트
-**출력:** HTML Output Preview (승인됨)
+**출력:** 외부 링크형 Output Preview Artifact (승인됨)
 
 ---
 
@@ -376,7 +381,7 @@ npm run build && npm start
 |------|--------|------|
 | v0.1 | Dashboard 웹 앱 기본 구조 | ✅ 완료 |
 | v0.2 | ChatPage + WorkflowEngine (5-Phase) | ✅ 완료 |
-| v0.3 | HTML Output Preview (Prediction Phase) | 🔄 진행 중 |
+| v0.3 | Opus 기반 외부 링크형 Output Preview Artifact (UI/UX + Architecture + DFD + Scenario) | 🔄 진행 중 |
 | v0.4 | Agent SDK 연동 (BotComposer) | 계획 |
 | v0.5 | Phase별 봇 자동 구성 + 실행 | 계획 |
 | v0.6 | Review + 보고서 생성 | 계획 |

@@ -6,6 +6,7 @@ interface ChatTimelineProps {
   channel?: 'main' | 'internal' | 'all';
   searchQuery?: string;
   filterBot?: string;
+  isThinking?: boolean;
 }
 
 const roleConfig: Record<string, { color: string; label: string }> = {
@@ -15,7 +16,13 @@ const roleConfig: Record<string, { color: string; label: string }> = {
   system: { color: 'var(--text-muted)', label: 'System' },
 };
 
-export default function ChatTimeline({ messages, channel = 'all', searchQuery, filterBot }: ChatTimelineProps) {
+export default function ChatTimeline({
+  messages,
+  channel = 'all',
+  searchQuery,
+  filterBot,
+  isThinking = false,
+}: ChatTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const [isAutoScroll, setIsAutoScroll] = useState(true);
@@ -76,6 +83,37 @@ export default function ChatTimeline({ messages, channel = 'all', searchQuery, f
         {text.slice(idx + query.length)}
       </>
     );
+  }, []);
+
+  const renderTextWithLinks = useCallback((text: string) => {
+    const lines = text.split('\n');
+    const urlRegex = /(https?:\/\/[^\s<>()]+|\/api\/preview\/[a-zA-Z0-9._-]+)/g;
+
+    return lines.map((line, lineIdx) => {
+      const parts = line.split(urlRegex);
+      return (
+        <span key={`line-${lineIdx}`}>
+          {parts.map((part, idx) => {
+            if (!part) return null;
+            const isUrl = /^(https?:\/\/|\/api\/preview\/)/.test(part);
+            if (!isUrl) return <span key={`txt-${lineIdx}-${idx}`}>{part}</span>;
+
+            return (
+              <a
+                key={`url-${lineIdx}-${idx}`}
+                href={part}
+                target="_blank"
+                rel="noreferrer"
+                className="underline text-[var(--color-info)] break-all"
+              >
+                {part}
+              </a>
+            );
+          })}
+          {lineIdx < lines.length - 1 && <br />}
+        </span>
+      );
+    });
   }, []);
 
   if (filtered.length === 0) {
@@ -143,12 +181,32 @@ export default function ChatTimeline({ messages, channel = 'all', searchQuery, f
                   </span>
                 </div>
                 <div className="text-[var(--text-primary)] whitespace-pre-wrap break-words">
-                  {highlightText(msg.content, searchQuery)}
+                  {searchQuery ? highlightText(msg.content, searchQuery) : renderTextWithLinks(msg.content)}
                 </div>
               </div>
             </div>
           );
         })}
+        {isThinking && channel !== 'internal' && (
+          <div className="flex justify-start" role="status" aria-live="polite" aria-label="Orchestrator is thinking">
+            <div
+              className="max-w-[80%] rounded-lg px-3.5 py-2.5 text-sm bg-[var(--bg-elevated)]"
+              style={{ borderLeft: `3px solid ${roleConfig.orchestrator.color}` }}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-semibold" style={{ color: roleConfig.orchestrator.color }}>
+                  {roleConfig.orchestrator.label}
+                </span>
+              </div>
+              <div className="text-[var(--text-muted)] flex items-center gap-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse [animation-delay:120ms]" />
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-current animate-pulse [animation-delay:240ms]" />
+                <span className="ml-1 text-xs">Thinking...</span>
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={endRef} />
       </div>
 

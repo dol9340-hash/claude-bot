@@ -117,6 +117,11 @@ export interface BotStatusDTO {
   costUsd: number;
   tasksCompleted: number;
   tasksFailed: number;
+  currentTask?: string;
+  currentTaskIndex?: number;
+  totalTasks?: number;
+  taskStartedAt?: string;
+  lastProgressMessage?: string;
 }
 
 // ─── Epic Types ─────────────────────────────────────────────────────────────

@@ -43,8 +43,23 @@ describe('Full Workflow Cycle (Phase 1→5)', () => {
     const pending = env.chat.getWorkflow().decisions.filter(d => d.status === 'pending');
     expect(pending.length).toBeGreaterThan(0);
     expect(pending[0].type).toBe('prediction');
-    expect(pending[0].tabs).toBeDefined();
-    expect(pending[0].tabs!.length).toBe(1);
+    expect(pending[0].description).toContain('/api/preview/');
+  });
+
+  it('should acknowledge compact numeric selections without repeating questions', async () => {
+    env.workflow.handleUserMessage('분석');
+    await waitForStep(env.chat, 'onboarding', 1000);
+
+    env.workflow.handleUserMessage('2');
+
+    const orchestratorMessages = env.chat
+      .getMessages()
+      .filter((m) => m.role === 'orchestrator')
+      .map((m) => m.content);
+    const last = orchestratorMessages[orchestratorMessages.length - 1] ?? '';
+
+    expect(last).toContain('방금 입력을 반영했습니다: "2"');
+    expect(last).toContain('중복 질문은 생략');
   });
 
   it('should handle prediction approval and move to documentation', async () => {
